@@ -1,7 +1,17 @@
 use std::process::Command;
 
 pub fn run(range: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if range == "_wnew_" {
+    if range == "_splith" {
+        // Horizontal split (side by side)
+        Command::new("tmux")
+            .args(["split-window", "-h"])
+            .status()?;
+    } else if range == "_splitv" {
+        // Vertical split (top/bottom)
+        Command::new("tmux")
+            .args(["split-window", "-v"])
+            .status()?;
+    } else if range == "_wnew_" {
         Command::new("tmux")
             .args(["new-window"])
             .status()?;
