@@ -25,6 +25,18 @@ enum Commands {
     Render,
     /// Output view switcher string (called by tmux-sessionbar)
     RenderView,
+    /// Save current window/pane layout
+    LayoutSave {
+        /// Layout name
+        name: String,
+    },
+    /// Restore a saved layout
+    LayoutLoad {
+        /// Layout name
+        name: String,
+    },
+    /// List saved layouts
+    LayoutList,
 }
 
 fn main() {
@@ -39,6 +51,9 @@ fn main() {
             print!("{}", commands::render::render_view_switcher());
             Ok(())
         }
+        Commands::LayoutSave { name } => commands::layout::save(&name),
+        Commands::LayoutLoad { name } => commands::layout::load(&name),
+        Commands::LayoutList => commands::layout::list(),
     };
 
     if let Err(e) = result {

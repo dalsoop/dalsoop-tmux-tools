@@ -86,6 +86,9 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
         ));
     }
 
+    // System stats
+    let sys_stats = get_system_stats();
+
     // Build right side from config
     let mut right_parts = Vec::new();
     for block in &config.status.right.blocks {
@@ -109,7 +112,7 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
             _ => {}
         }
     }
-    let right_content = right_parts.join("");
+    let right_content = format!("{sys_stats}{}", right_parts.join(""));
 
     // Get view switcher from windowbar
     let view_switcher = Command::new("tmux-windowbar")
@@ -163,4 +166,32 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
 
 fn render_right() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
+}
+
+fn get_system_stats() -> String {
+    // CPU usage from /proc/loadavg
+    let load = std::fs::read_to_string("/proc/loadavg")
+        .unwrap_or_default();
+    let cpu_load = load.split_whitespace().next().unwrap_or("0");
+
+    // Memory from /proc/meminfo
+    let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    let mut total_kb = 0u64;
+    let mut avail_kb = 0u64;
+    for line in meminfo.lines() {
+        if line.starts_with("MemTotal:") {
+            total_kb = line.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+        } else if line.starts_with("MemAvailable:") {
+            avail_kb = line.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+        }
+    }
+    let used_gb = (total_kb - avail_kb) as f64 / 1048576.0;
+    let total_gb = total_kb as f64 / 1048576.0;
+    let mem_pct = if total_kb > 0 { ((total_kb - avail_kb) * 100 / total_kb) as u64 } else { 0 };
+
+    let mem_color = if mem_pct > 80 { "#e06c75" } else if mem_pct > 60 { "#e5c07b" } else { "#98c379" };
+
+    format!(
+        "#[fg=#abb2bf,bg=#3e4452] {cpu_load} #[fg=#282c34,bg={mem_color}] {used_gb:.1}/{total_gb:.0}G ",
+    )
 }
