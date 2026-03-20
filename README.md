@@ -21,8 +21,8 @@ Switch between tmux sessions by clicking on session blocks in the status bar —
 
 ```bash
 # Build from source
-git clone https://github.com/dalsoop/tmux-sessionbar.git
-cd tmux-sessionbar
+git clone https://github.com/dalsoop/dalsoop-tmux-mouse-sessionbar.git
+cd dalsoop-tmux-mouse-sessionbar
 cargo build --release
 
 # Install binary
