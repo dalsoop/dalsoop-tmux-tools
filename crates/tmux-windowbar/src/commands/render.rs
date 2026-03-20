@@ -284,15 +284,6 @@ pub fn render_view_switcher() -> String {
     parts.join("")
 }
 
-/// Clear unused status-format lines
-fn clear_lines_from(start: usize) -> Result<(), Box<dyn std::error::Error>> {
-    for i in start..=6 {
-        Command::new("tmux")
-            .args(["set", "-g", &format!("status-format[{i}]"), ""])
-            .status()?;
-    }
-    Ok(())
-}
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let windows = render_windows()?;

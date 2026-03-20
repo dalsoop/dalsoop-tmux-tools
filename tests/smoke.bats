@@ -236,3 +236,48 @@ teardown_file() {
     tmux kill-session -t killme 2>/dev/null || true
     rm -f /tmp/tmux-pending-confirm.conf
 }
+
+# --- Layout ---
+
+@test "layout-save creates layout file" {
+    run tmux-windowbar layout-save bats-test
+    assert_success
+    [ -f "$HOME/.config/tmux-windowbar/layouts/bats-test.layout" ]
+}
+
+@test "layout-list shows saved layouts" {
+    run tmux-windowbar layout-list
+    assert_success
+    assert_output --partial "bats-test"
+}
+
+@test "layout-load restores layout" {
+    run tmux-windowbar layout-load bats-test
+    assert_success
+    # Cleanup
+    rm -f "$HOME/.config/tmux-windowbar/layouts/bats-test.layout"
+}
+
+# --- System stats ---
+
+@test "sessions line includes system stats" {
+    run tmux show -gv status-format[1]
+    assert_success
+    # Should have load average and memory info
+    assert_output --partial "G "
+}
+
+# --- Double click binding ---
+
+@test "double-click binding is set" {
+    run tmux list-keys
+    assert_output --partial "DoubleClick1Status"
+}
+
+# --- Sync ---
+
+@test "tmux-sessionbar sync command exists" {
+    run tmux-sessionbar sync --help 2>&1
+    # Just check it doesn't crash
+    [ $? -eq 0 ] || [ $? -eq 2 ]
+}

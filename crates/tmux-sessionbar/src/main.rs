@@ -28,6 +28,8 @@ enum Commands {
         /// The mouse_status_range value
         range: String,
     },
+    /// Sync tmux-tools config to all system accounts
+    Sync,
 }
 
 fn main() {
@@ -39,6 +41,7 @@ fn main() {
         Commands::Status => commands::status::run(),
         Commands::RenderStatus { segment } => commands::render::run(&segment),
         Commands::Click { range } => commands::click::run(&range),
+        Commands::Sync => commands::sync::run(),
     };
 
     if let Err(e) = result {
