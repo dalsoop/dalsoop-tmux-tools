@@ -31,20 +31,40 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
         if name.is_empty() {
             continue;
         }
-        if name == current {
-            parts.push(format!(
-                "#[range=user|{name}]#[fg={},bg={},bold] {name} #[norange default]",
+        let mut block = if name == current {
+            format!(
+                "#[range=user|{name}]#[fg={},bg={},bold] {name} #[norange]",
                 sl.active_fg, sl.active_bg,
+            )
+        } else {
+            format!(
+                "#[range=user|{name}]#[fg={},bg={}] {name} #[norange]",
+                sl.inactive_fg, sl.inactive_bg,
+            )
+        };
+
+        // [x] kill button — hide for current session
+        if sl.show_kill_button && name != current {
+            block.push_str(&format!(
+                "#[range=user|_kill_{name}]#[fg={},bg={}] x #[norange default]",
+                sl.button_fg, sl.kill_bg,
             ));
         } else {
-            parts.push(format!(
-                "#[range=user|{name}]#[fg={},bg={}] {name} #[norange default]",
-                sl.inactive_fg, sl.inactive_bg,
-            ));
+            block.push_str("#[default]");
         }
+
+        parts.push(block);
     }
 
-    let session_blocks = parts.join(&sl.separator);
+    let mut session_blocks = parts.join(&sl.separator);
+
+    // [+] new session button
+    if sl.show_new_button {
+        session_blocks.push_str(&format!(
+            " #[range=user|_new_]#[fg={},bg={}] + #[norange default]",
+            sl.button_fg, sl.button_bg,
+        ));
+    }
 
     // Build right side from config
     let mut right_parts = Vec::new();

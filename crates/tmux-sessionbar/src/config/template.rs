@@ -55,6 +55,16 @@ pub struct SessionListBlock {
     pub inactive_bg: String,
     #[serde(default = "default_separator")]
     pub separator: String,
+    #[serde(default = "default_true")]
+    pub show_new_button: bool,
+    #[serde(default = "default_true")]
+    pub show_kill_button: bool,
+    #[serde(default = "default_button_fg")]
+    pub button_fg: String,
+    #[serde(default = "default_button_bg")]
+    pub button_bg: String,
+    #[serde(default = "default_kill_bg")]
+    pub kill_bg: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -125,6 +135,9 @@ fn default_hostname_format() -> String { " #H ".into() }
 fn default_datetime_bg() -> String { "#c678dd".into() }
 fn default_datetime_format() -> String { " %H:%M ".into() }
 fn default_true() -> bool { true }
+fn default_button_fg() -> String { "#282c34".into() }
+fn default_button_bg() -> String { "#61afef".into() }
+fn default_kill_bg() -> String { "#e06c75".into() }
 
 pub fn config_dir() -> PathBuf {
     dirs_home().join(CONFIG_DIR)
@@ -161,6 +174,11 @@ pub fn default_config() -> Config {
                 inactive_fg: default_inactive_fg(),
                 inactive_bg: default_inactive_bg(),
                 separator: default_separator(),
+                show_new_button: true,
+                show_kill_button: true,
+                button_fg: default_button_fg(),
+                button_bg: default_button_bg(),
+                kill_bg: default_kill_bg(),
             },
             hostname: SimpleBlock::default(),
             datetime: DatetimeBlock::default(),

@@ -23,6 +23,11 @@ enum Commands {
         /// Segment to render: "left" or "right"
         segment: String,
     },
+    /// Handle mouse click on status bar (called by tmux internally)
+    Click {
+        /// The mouse_status_range value
+        range: String,
+    },
 }
 
 fn main() {
@@ -33,6 +38,7 @@ fn main() {
         Commands::Apply => commands::apply::run(),
         Commands::Status => commands::status::run(),
         Commands::RenderStatus { segment } => commands::render::run(&segment),
+        Commands::Click { range } => commands::click::run(&range),
     };
 
     if let Err(e) = result {
