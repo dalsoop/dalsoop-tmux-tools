@@ -91,23 +91,39 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
     }
     let right_content = right_parts.join("");
 
-    // Build status-format[0] directly, bypassing range=left wrapping
-    // This allows range=user tags to be clickable
-    let format = format!(
-        "#[align=left default]{session_blocks}\
-         #[list=on align=left]\
-         #[list=left-marker]<#[list=right-marker]>\
-         #[list=on]\
-         #{{W:\
-         #[range=window|#{{window_index}} #{{E:window-status-style}}]\
-         #[push-default]#{{T:window-status-format}}#[pop-default]\
-         #[norange default]#{{?window_end_flag,,#{{window-status-separator}}}},\
-         #[range=window|#{{window_index}} list=focus #{{E:window-status-current-style}}]\
-         #[push-default]#{{T:window-status-current-format}}#[pop-default]\
-         #[norange list=on default]#{{?window_end_flag,,#{{window-status-separator}}}}\
-         }}\
-         #[nolist align=right default]{right_content}"
-    );
+    // Try to get window list from tmux-windowbar, fallback to default #{W:...}
+    let window_section = Command::new("tmux-windowbar")
+        .args(["render"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string());
+
+    let session_label = "#[fg=#98c379,bold]Sessions #[default]";
+    let format = if let Some(windows) = window_section {
+        format!(
+            "#[align=left default]{session_label}{session_blocks} \
+             {windows}\
+             #[align=right default]{right_content}"
+        )
+    } else {
+        // Fallback: use tmux native window list
+        format!(
+            "#[align=left default]{session_label}{session_blocks}\
+             #[list=on align=left]\
+             #[list=left-marker]<#[list=right-marker]>\
+             #[list=on]\
+             #{{W:\
+             #[range=window|#{{window_index}} #{{E:window-status-style}}]\
+             #[push-default]#{{T:window-status-format}}#[pop-default]\
+             #[norange default]#{{?window_end_flag,,#{{window-status-separator}}}},\
+             #[range=window|#{{window_index}} list=focus #{{E:window-status-current-style}}]\
+             #[push-default]#{{T:window-status-current-format}}#[pop-default]\
+             #[norange list=on default]#{{?window_end_flag,,#{{window-status-separator}}}}\
+             }}\
+             #[nolist align=right default]{right_content}"
+        )
+    };
 
     Command::new("tmux")
         .args(["set", "-g", "status-format[0]", &format])
