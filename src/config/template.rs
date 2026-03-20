@@ -1,0 +1,180 @@
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+pub const CONFIG_DIR: &str = ".config/tmux-sessionbar";
+pub const CONFIG_FILE: &str = "config.toml";
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Config {
+    pub status: StatusConfig,
+    pub blocks: BlocksConfig,
+    #[serde(default)]
+    pub keybindings: KeybindingsConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StatusConfig {
+    #[serde(default = "default_interval")]
+    pub interval: u32,
+    #[serde(default = "default_position")]
+    pub position: String,
+    #[serde(default = "default_bg")]
+    pub bg: String,
+    #[serde(default = "default_fg")]
+    pub fg: String,
+    pub left: SegmentConfig,
+    pub right: SegmentConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SegmentConfig {
+    pub blocks: Vec<String>,
+    #[serde(default = "default_length")]
+    pub length: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlocksConfig {
+    #[serde(rename = "session-list")]
+    pub session_list: SessionListBlock,
+    #[serde(default)]
+    pub hostname: SimpleBlock,
+    #[serde(default)]
+    pub datetime: DatetimeBlock,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SessionListBlock {
+    #[serde(default = "default_active_fg")]
+    pub active_fg: String,
+    #[serde(default = "default_active_bg")]
+    pub active_bg: String,
+    #[serde(default = "default_inactive_fg")]
+    pub inactive_fg: String,
+    #[serde(default = "default_inactive_bg")]
+    pub inactive_bg: String,
+    #[serde(default = "default_separator")]
+    pub separator: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SimpleBlock {
+    #[serde(default = "default_block_fg")]
+    pub fg: String,
+    #[serde(default = "default_hostname_bg")]
+    pub bg: String,
+    #[serde(default = "default_hostname_format")]
+    pub format: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DatetimeBlock {
+    #[serde(default = "default_block_fg")]
+    pub fg: String,
+    #[serde(default = "default_datetime_bg")]
+    pub bg: String,
+    #[serde(default = "default_datetime_format")]
+    pub format: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KeybindingsConfig {
+    #[serde(default = "default_true")]
+    pub session_switch: bool,
+}
+
+impl Default for KeybindingsConfig {
+    fn default() -> Self {
+        Self { session_switch: true }
+    }
+}
+
+impl Default for SimpleBlock {
+    fn default() -> Self {
+        Self {
+            fg: default_block_fg(),
+            bg: default_hostname_bg(),
+            format: default_hostname_format(),
+        }
+    }
+}
+
+impl Default for DatetimeBlock {
+    fn default() -> Self {
+        Self {
+            fg: default_block_fg(),
+            bg: default_datetime_bg(),
+            format: default_datetime_format(),
+        }
+    }
+}
+
+fn default_interval() -> u32 { 2 }
+fn default_position() -> String { "bottom".into() }
+fn default_bg() -> String { "#282c34".into() }
+fn default_fg() -> String { "#abb2bf".into() }
+fn default_length() -> u32 { 120 }
+fn default_active_fg() -> String { "#282c34".into() }
+fn default_active_bg() -> String { "#98c379".into() }
+fn default_inactive_fg() -> String { "#abb2bf".into() }
+fn default_inactive_bg() -> String { "#3e4452".into() }
+fn default_separator() -> String { " ".into() }
+fn default_block_fg() -> String { "#282c34".into() }
+fn default_hostname_bg() -> String { "#61afef".into() }
+fn default_hostname_format() -> String { " #H ".into() }
+fn default_datetime_bg() -> String { "#c678dd".into() }
+fn default_datetime_format() -> String { " %H:%M ".into() }
+fn default_true() -> bool { true }
+
+pub fn config_dir() -> PathBuf {
+    dirs_home().join(CONFIG_DIR)
+}
+
+pub fn config_path() -> PathBuf {
+    config_dir().join(CONFIG_FILE)
+}
+
+fn dirs_home() -> PathBuf {
+    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/root".into()))
+}
+
+pub fn default_config() -> Config {
+    Config {
+        status: StatusConfig {
+            interval: default_interval(),
+            position: default_position(),
+            bg: default_bg(),
+            fg: default_fg(),
+            left: SegmentConfig {
+                blocks: vec!["session-list".into()],
+                length: 120,
+            },
+            right: SegmentConfig {
+                blocks: vec!["hostname".into(), "datetime".into()],
+                length: 80,
+            },
+        },
+        blocks: BlocksConfig {
+            session_list: SessionListBlock {
+                active_fg: default_active_fg(),
+                active_bg: default_active_bg(),
+                inactive_fg: default_inactive_fg(),
+                inactive_bg: default_inactive_bg(),
+                separator: default_separator(),
+            },
+            hostname: SimpleBlock::default(),
+            datetime: DatetimeBlock::default(),
+        },
+        keybindings: KeybindingsConfig::default(),
+    }
+}
+
+pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+    let path = config_path();
+    if path.exists() {
+        let content = std::fs::read_to_string(&path)?;
+        Ok(toml::from_str(&content)?)
+    } else {
+        Ok(default_config())
+    }
+}
