@@ -201,8 +201,8 @@ pub fn render_panes() -> Result<String, Box<dyn std::error::Error>> {
                 w.active_fg, w.active_bg,
             )
         } else {
-            let (fg, bg) = if cmd == "spf" {
-                ("#282c34".to_string(), "#c678dd".to_string())
+            let (fg, bg) = if let Some(c) = config.colors.get(cmd) {
+                (c.fg.clone(), c.bg.clone())
             } else if is_idle {
                 (w.idle_fg.clone(), w.idle_bg.clone())
             } else {

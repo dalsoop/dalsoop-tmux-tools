@@ -1,12 +1,21 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub const CONFIG_DIR: &str = ".config/tmux-windowbar";
 pub const CONFIG_FILE: &str = "config.toml";
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct ColorEntry {
+    pub fg: String,
+    pub bg: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub window: WindowConfig,
+    #[serde(default)]
+    pub colors: HashMap<String, ColorEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,6 +77,16 @@ fn home_dir() -> PathBuf {
 }
 
 pub fn default_config() -> Config {
+    let mut colors = HashMap::new();
+    colors.insert("spf".into(), ColorEntry { fg: "#282c34".into(), bg: "#c678dd".into() });
+    colors.insert("claude".into(), ColorEntry { fg: "#282c34".into(), bg: "#61afef".into() });
+    colors.insert("vim".into(), ColorEntry { fg: "#282c34".into(), bg: "#e06c75".into() });
+    colors.insert("nvim".into(), ColorEntry { fg: "#282c34".into(), bg: "#e06c75".into() });
+    colors.insert("node".into(), ColorEntry { fg: "#282c34".into(), bg: "#98c379".into() });
+    colors.insert("python".into(), ColorEntry { fg: "#282c34".into(), bg: "#e5c07b".into() });
+    colors.insert("python3".into(), ColorEntry { fg: "#282c34".into(), bg: "#e5c07b".into() });
+    colors.insert("htop".into(), ColorEntry { fg: "#282c34".into(), bg: "#d19a66".into() });
+
     Config {
         window: WindowConfig {
             show_kill_button: true,
@@ -85,6 +104,7 @@ pub fn default_config() -> Config {
             idle_fg: default_idle_fg(),
             idle_bg: default_idle_bg(),
         },
+        colors,
     }
 }
 
