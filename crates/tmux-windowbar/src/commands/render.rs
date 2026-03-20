@@ -219,7 +219,16 @@ pub fn render_panes() -> Result<String, Box<dyn std::error::Error>> {
         parts.push(block);
     }
 
-    Ok(parts.join(" "))
+    let mut result = parts.join(" ");
+
+    // Split buttons
+    result.push_str(&format!(
+        " #[range=user|_splith]#[fg={},bg={}] | #[norange default]\
+         #[range=user|_splitv]#[fg={},bg={}] - #[norange default]",
+        w.button_fg, w.button_bg, w.button_fg, w.button_bg,
+    ));
+
+    Ok(result)
 }
 
 /// Set status-format[2] with panes
