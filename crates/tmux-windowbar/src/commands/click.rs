@@ -1,7 +1,65 @@
+use crate::config::template::load_config;
 use std::process::Command;
 
 pub fn run(range: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if range == "_splith" {
+    if let Some(mode) = range.strip_prefix("_v") {
+        // View mode switch
+        let mode = mode.to_lowercase();
+        Command::new("tmux")
+            .args(["set", "-g", "@view_mode", &mode])
+            .status()?;
+        if mode == "all" {
+            // Clear user filter
+            let _ = Command::new("tmux")
+                .args(["set", "-gu", "@view_user"])
+                .status();
+        }
+        // Re-render
+        let _ = Command::new("tmux-sessionbar")
+            .args(["render-status", "left"])
+            .status();
+    } else if let Some(idx_str) = range.strip_prefix("_app") {
+        if let Ok(idx) = idx_str.parse::<usize>() {
+            let config = load_config()?;
+            if let Some(app) = config.apps.get(idx) {
+                if app.mode == "pane" {
+                    Command::new("tmux")
+                        .args(["split-window", "-h", &app.command])
+                        .status()?;
+                } else {
+                    Command::new("tmux")
+                        .args(["new-window", "-n", &app.command, &app.command])
+                        .status()?;
+                }
+            }
+        }
+    } else if let Some(user) = range.strip_prefix("_u") {
+        // Set view filter to this user
+        Command::new("tmux")
+            .args(["set", "-g", "@view_user", user])
+            .status()?;
+
+        // Check if session for this user already exists
+        let check = Command::new("tmux")
+            .args(["has-session", "-t", &format!("={user}")])
+            .status();
+        if check.map(|s| s.success()).unwrap_or(false) {
+            Command::new("tmux")
+                .args(["switch-client", "-t", &format!("={user}")])
+                .status()?;
+        } else {
+            Command::new("tmux")
+                .args(["new-session", "-d", "-s", user, &format!("sudo -iu {user}")])
+                .status()?;
+            Command::new("tmux")
+                .args(["switch-client", "-t", &format!("={user}")])
+                .status()?;
+        }
+        // Force re-render with new filter
+        let _ = Command::new("tmux-sessionbar")
+            .args(["render-status", "left"])
+            .status();
+    } else if range == "_splith" {
         // Horizontal split (side by side)
         Command::new("tmux")
             .args(["split-window", "-h"])
@@ -30,30 +88,18 @@ pub fn run(range: &str) -> Result<(), Box<dyn std::error::Error>> {
                 .status()?;
         }
     } else if let Some(target) = range.strip_prefix("_wx") {
-        // Kill window from line2: target is "session.window"
+        // Kill window: target is "session.window"
         if let Some((sess, win)) = target.split_once('.') {
-            Command::new("tmux")
-                .args([
-                    "confirm-before",
-                    "-p",
-                    &format!("kill window '{sess}:{win}'? (y/n)"),
-                    &format!("kill-window -t ={sess}:{win}"),
-                ])
-                .status()?;
+            let kill_cmd = format!("kill-window -t ={sess}:{win}");
+            confirm_and_run(&format!("Kill window '{sess}:{win}'?"), &kill_cmd)?;
         }
     } else if let Some(target) = range.strip_prefix("_px") {
         // Kill pane: target is "session.window.pane"
         let parts: Vec<&str> = target.splitn(3, '.').collect();
         if parts.len() == 3 {
             let (sess, win, pane) = (parts[0], parts[1], parts[2]);
-            Command::new("tmux")
-                .args([
-                    "confirm-before",
-                    "-p",
-                    &format!("kill pane '{sess}.{win}.{pane}'? (y/n)"),
-                    &format!("kill-pane -t ={sess}:{win}.{pane}"),
-                ])
-                .status()?;
+            let kill_cmd = format!("kill-pane -t ={sess}:{win}.{pane}");
+            confirm_and_run(&format!("Kill pane '{sess}.{win}.{pane}'?"), &kill_cmd)?;
         }
     } else if let Some(target) = range.strip_prefix("_pp") {
         // Pane select: target is "session.window.pane"
@@ -94,14 +140,17 @@ fn kill_window(idx: &str) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    Command::new("tmux")
-        .args([
-            "confirm-before",
-            "-p",
-            &format!("kill window '{idx}'? (y/n)"),
-            &format!("kill-window -t :{idx}"),
-        ])
-        .status()?;
+    let kill_cmd = format!("kill-window -t :{idx}");
+    confirm_and_run(&format!("Kill window '{idx}'?"), &kill_cmd)?;
 
+    Ok(())
+}
+
+/// Write confirm-before to pending file for binding to pick up
+fn confirm_and_run(title: &str, cmd: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let content = format!(
+        "confirm-before -p \"{title} (y/n)\" \"{cmd}\""
+    );
+    std::fs::write("/tmp/tmux-pending-confirm.conf", content)?;
     Ok(())
 }

@@ -23,6 +23,8 @@ enum Commands {
     },
     /// Render window list (called by tmux-sessionbar internally)
     Render,
+    /// Output view switcher string (called by tmux-sessionbar)
+    RenderView,
 }
 
 fn main() {
@@ -33,6 +35,10 @@ fn main() {
         Commands::Apply => commands::apply::run(),
         Commands::Click { range } => commands::click::run(&range),
         Commands::Render => commands::render::run(),
+        Commands::RenderView => {
+            print!("{}", commands::render::render_view_switcher());
+            Ok(())
+        }
     };
 
     if let Err(e) = result {
