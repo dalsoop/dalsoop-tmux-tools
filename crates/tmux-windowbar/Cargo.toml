@@ -1,0 +1,12 @@
+[package]
+name = "tmux-windowbar"
+version = "0.1.0"
+edition = "2024"
+description = "Clickable window list with [+] and [x] buttons for tmux status bar"
+license = "MIT"
+repository = "https://github.com/dalsoop/dalsoop-tmux-tools"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

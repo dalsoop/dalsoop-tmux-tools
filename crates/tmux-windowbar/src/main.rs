@@ -1,0 +1,42 @@
+mod commands;
+mod config;
+
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "tmux-windowbar", about = "Clickable window list with [+][x] for tmux status bar")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Initial setup: set window-status-format and bindings
+    Init,
+    /// Re-apply window bar settings
+    Apply,
+    /// Handle mouse click (called by tmux internally)
+    Click {
+        /// The mouse_status_range value
+        range: String,
+    },
+    /// Render window list (called by tmux-sessionbar internally)
+    Render,
+}
+
+fn main() {
+    let cli = Cli::parse();
+
+    let result = match cli.command {
+        Commands::Init => commands::init::run(),
+        Commands::Apply => commands::apply::run(),
+        Commands::Click { range } => commands::click::run(&range),
+        Commands::Render => commands::render::run(),
+    };
+
+    if let Err(e) = result {
+        eprintln!("error: {e}");
+        std::process::exit(1);
+    }
+}
