@@ -20,6 +20,15 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default();
 
+    // Get view user filter
+    let view_user = Command::new("tmux")
+        .args(["show", "-gv", "@view_user"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
     // List all sessions
     let output = Command::new("tmux")
         .args(["list-sessions", "-F", "#{session_name}"])
@@ -30,6 +39,17 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
     for name in sessions.lines() {
         if name.is_empty() {
             continue;
+        }
+        // Filter by user if set
+        // Sessions named after a user belong to that user
+        // Sessions with other names (numbers, etc) belong to root
+        if !view_user.is_empty() {
+            let is_user_session = name == view_user;
+            let is_unowned = !name.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false);
+            let belongs_to_root = is_unowned && view_user == "root";
+            if !is_user_session && !belongs_to_root {
+                continue;
+            }
         }
         let mut block = if name == current {
             format!(
@@ -46,8 +66,8 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
         // [x] kill button — hide for current session
         if sl.show_kill_button && name != current {
             block.push_str(&format!(
-                "#[range=user|_kill_{name}]#[fg={},bg={}] x #[norange default]",
-                sl.button_fg, sl.kill_bg,
+                "#[range=user|_k{name}]#[fg={},bg=#282c34] x #[norange default]",
+                sl.kill_bg,
             ));
         } else {
             block.push_str("#[default]");
@@ -91,7 +111,16 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
     }
     let right_content = right_parts.join("");
 
-    // Try to get window list from tmux-windowbar, fallback to default #{W:...}
+    // Get view switcher from windowbar
+    let view_switcher = Command::new("tmux-windowbar")
+        .args(["render-view"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+
+    // Try to get window list from tmux-windowbar
     let window_section = Command::new("tmux-windowbar")
         .args(["render"])
         .output()
@@ -104,10 +133,9 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
         format!(
             "#[align=left default]{session_label}{session_blocks} \
              {windows}\
-             #[align=right default]{right_content}"
+             #[align=right default]{right_content} {view_switcher}"
         )
     } else {
-        // Fallback: use tmux native window list
         format!(
             "#[align=left default]{session_label}{session_blocks}\
              #[list=on align=left]\
@@ -121,12 +149,13 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
              #[push-default]#{{T:window-status-current-format}}#[pop-default]\
              #[norange list=on default]#{{?window_end_flag,,#{{window-status-separator}}}}\
              }}\
-             #[nolist align=right default]{right_content}"
+             #[nolist align=right default]{right_content} {view_switcher}"
         )
     };
 
+    // Always index 1
     Command::new("tmux")
-        .args(["set", "-g", "status-format[0]", &format])
+        .args(["set", "-g", "status-format[1]", &format])
         .status()?;
 
     Ok(())

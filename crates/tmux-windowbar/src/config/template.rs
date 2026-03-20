@@ -11,11 +11,25 @@ pub struct ColorEntry {
     pub bg: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AppEntry {
+    pub emoji: String,
+    pub command: String,
+    #[serde(default = "default_app_fg")]
+    pub fg: String,
+    #[serde(default = "default_app_bg")]
+    pub bg: String,
+    #[serde(default = "default_app_mode")]
+    pub mode: String, // "window" or "pane"
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub window: WindowConfig,
     #[serde(default)]
     pub colors: HashMap<String, ColorEntry>,
+    #[serde(default)]
+    pub apps: Vec<AppEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -55,14 +69,17 @@ fn default_fg() -> String { "#abb2bf".into() }
 fn default_bg() -> String { "#282c34".into() }
 fn default_active_fg() -> String { "#282c34".into() }
 fn default_active_bg() -> String { "#98c379".into() }
-fn default_kill_fg() -> String { "#282c34".into() }
-fn default_kill_bg() -> String { "#e06c75".into() }
+fn default_kill_fg() -> String { "#e06c75".into() }
+fn default_kill_bg() -> String { "#282c34".into() }
 fn default_button_fg() -> String { "#282c34".into() }
 fn default_button_bg() -> String { "#61afef".into() }
 fn default_running_fg() -> String { "#282c34".into() }
 fn default_running_bg() -> String { "#56b6c2".into() }
 fn default_idle_fg() -> String { "#5c6370".into() }
 fn default_idle_bg() -> String { "#2c323c".into() }
+fn default_app_fg() -> String { "#282c34".into() }
+fn default_app_bg() -> String { "#61afef".into() }
+fn default_app_mode() -> String { "window".into() }
 
 pub fn config_dir() -> PathBuf {
     home_dir().join(CONFIG_DIR)
@@ -86,6 +103,52 @@ pub fn default_config() -> Config {
     colors.insert("python".into(), ColorEntry { fg: "#282c34".into(), bg: "#e5c07b".into() });
     colors.insert("python3".into(), ColorEntry { fg: "#282c34".into(), bg: "#e5c07b".into() });
     colors.insert("htop".into(), ColorEntry { fg: "#282c34".into(), bg: "#d19a66".into() });
+    colors.insert("codex".into(), ColorEntry { fg: "#282c34".into(), bg: "#98c379".into() });
+
+    let apps = vec![
+        AppEntry {
+            emoji: "🔐".into(),
+            command: "spf".into(),
+            fg: "#282c34".into(),
+            bg: "#c678dd".into(),
+            mode: "window".into(),
+        },
+        AppEntry {
+            emoji: "🤖".into(),
+            command: "claude".into(),
+            fg: "#282c34".into(),
+            bg: "#61afef".into(),
+            mode: "window".into(),
+        },
+        AppEntry {
+            emoji: "🧠".into(),
+            command: "codex".into(),
+            fg: "#282c34".into(),
+            bg: "#98c379".into(),
+            mode: "window".into(),
+        },
+        AppEntry {
+            emoji: "📊".into(),
+            command: "htop".into(),
+            fg: "#282c34".into(),
+            bg: "#d19a66".into(),
+            mode: "window".into(),
+        },
+        AppEntry {
+            emoji: "🐍".into(),
+            command: "python3".into(),
+            fg: "#282c34".into(),
+            bg: "#e5c07b".into(),
+            mode: "window".into(),
+        },
+        AppEntry {
+            emoji: "🖥️".into(),
+            command: "bash".into(),
+            fg: "#282c34".into(),
+            bg: "#5c6370".into(),
+            mode: "window".into(),
+        },
+    ];
 
     Config {
         window: WindowConfig {
@@ -105,6 +168,7 @@ pub fn default_config() -> Config {
             idle_bg: default_idle_bg(),
         },
         colors,
+        apps,
     }
 }
 
