@@ -55,6 +55,12 @@ pub fn apply_settings() -> Result<(), Box<dyn std::error::Error>> {
     Command::new("tmux")
         .args(["set-hook", "-ga", "client-session-changed", &hook_cmd])
         .status()?;
+    Command::new("tmux")
+        .args(["set-hook", "-g", "after-select-pane", &hook_cmd])
+        .status()?;
+    Command::new("tmux")
+        .args(["set-hook", "-g", "after-split-window", &hook_cmd])
+        .status()?;
 
     Ok(())
 }

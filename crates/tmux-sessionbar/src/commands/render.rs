@@ -99,16 +99,17 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string());
 
+    let session_label = "#[fg=#98c379,bold]Sessions #[default]";
     let format = if let Some(windows) = window_section {
         format!(
-            "#[align=left default]{session_blocks} \
+            "#[align=left default]{session_label}{session_blocks} \
              {windows}\
              #[align=right default]{right_content}"
         )
     } else {
         // Fallback: use tmux native window list
         format!(
-            "#[align=left default]{session_blocks}\
+            "#[align=left default]{session_label}{session_blocks}\
              #[list=on align=left]\
              #[list=left-marker]<#[list=right-marker]>\
              #[list=on]\
