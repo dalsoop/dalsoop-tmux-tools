@@ -60,11 +60,12 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
         out.push_str("bind -n M-s choose-session\n\n");
     }
 
-    // Mouse click on session blocks
-    // range=user|X triggers MouseDown1Status (NOT StatusLeft)
-    // Must preserve default window click behavior too
-    out.push_str("# --- Mouse: click session/window blocks ---\n");
-    out.push_str("bind -Troot MouseDown1Status if-shell -F '#{==:#{mouse_status_range},window}' 'select-window' \"run -C 'switch-client -t \\\"=#{mouse_status_range}\\\"'\"\n\n");
+    // Mouse click: delegate to binary's `click` subcommand
+    // run -C expands #{mouse_status_range} before passing to run-shell
+    out.push_str("# --- Mouse: click session/window/button blocks ---\n");
+    out.push_str(&format!(
+        "bind -Troot MouseDown1Status if-shell -F '1' \"run-shell '{binary_path} click \\\"#{{mouse_status_range}}\\\"'\"\n\n"
+    ));
 
     // Hooks: update session list on session events
     out.push_str("# --- Hooks: update session list dynamically ---\n");
