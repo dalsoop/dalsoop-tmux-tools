@@ -193,17 +193,26 @@ pub fn render_panes() -> Result<String, Box<dyn std::error::Error>> {
         // range id: _pp{s}.{w}.{p} — keep under 15 bytes
         let range_id = format!("_pp{sess}.{win}.{pane}");
 
+        let is_idle = matches!(cmd, "bash" | "zsh" | "fish" | "sh" | "dash" | "ksh" | "csh" | "tcsh");
+
         let block = if is_active {
             format!(
                 "#[range=user|{range_id}]#[fg={},bg={},bold] {sess}.{win}.{pane}:{cmd} #[norange]#[default]",
                 w.active_fg, w.active_bg,
             )
         } else {
+            let (fg, bg) = if cmd == "spf" {
+                ("#282c34".to_string(), "#c678dd".to_string())
+            } else if is_idle {
+                (w.idle_fg.clone(), w.idle_bg.clone())
+            } else {
+                (w.running_fg.clone(), w.running_bg.clone())
+            };
             let kill_id = format!("_px{sess}.{win}.{pane}");
             format!(
-                "#[range=user|{range_id}]#[fg={},bg={}] {sess}.{win}.{pane}:{cmd} #[norange]\
+                "#[range=user|{range_id}]#[fg={fg},bg={bg}] {sess}.{win}.{pane}:{cmd} #[norange]\
                  #[range=user|{kill_id}]#[fg={},bg={}] x #[norange default]",
-                w.fg, w.bg, w.kill_fg, w.kill_bg,
+                w.kill_fg, w.kill_bg,
             )
         };
 

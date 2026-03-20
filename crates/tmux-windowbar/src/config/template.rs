@@ -31,6 +31,14 @@ pub struct WindowConfig {
     pub button_fg: String,
     #[serde(default = "default_button_bg")]
     pub button_bg: String,
+    #[serde(default = "default_running_fg")]
+    pub running_fg: String,
+    #[serde(default = "default_running_bg")]
+    pub running_bg: String,
+    #[serde(default = "default_idle_fg")]
+    pub idle_fg: String,
+    #[serde(default = "default_idle_bg")]
+    pub idle_bg: String,
 }
 
 fn default_true() -> bool { true }
@@ -42,6 +50,10 @@ fn default_kill_fg() -> String { "#282c34".into() }
 fn default_kill_bg() -> String { "#e06c75".into() }
 fn default_button_fg() -> String { "#282c34".into() }
 fn default_button_bg() -> String { "#61afef".into() }
+fn default_running_fg() -> String { "#282c34".into() }
+fn default_running_bg() -> String { "#56b6c2".into() }
+fn default_idle_fg() -> String { "#5c6370".into() }
+fn default_idle_bg() -> String { "#2c323c".into() }
 
 pub fn config_dir() -> PathBuf {
     home_dir().join(CONFIG_DIR)
@@ -68,6 +80,10 @@ pub fn default_config() -> Config {
             kill_bg: default_kill_bg(),
             button_fg: default_button_fg(),
             button_bg: default_button_bg(),
+            running_fg: default_running_fg(),
+            running_bg: default_running_bg(),
+            idle_fg: default_idle_fg(),
+            idle_bg: default_idle_bg(),
         },
     }
 }
