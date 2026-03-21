@@ -102,11 +102,16 @@ pub struct DatetimeBlock {
 pub struct KeybindingsConfig {
     #[serde(default = "default_true")]
     pub session_switch: bool,
+    #[serde(default = "default_true")]
+    pub pane_clear: bool,
 }
 
 impl Default for KeybindingsConfig {
     fn default() -> Self {
-        Self { session_switch: true }
+        Self {
+            session_switch: true,
+            pane_clear: true,
+        }
     }
 }
 

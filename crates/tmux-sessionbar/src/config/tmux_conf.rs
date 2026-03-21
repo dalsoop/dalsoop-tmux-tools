@@ -60,6 +60,11 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
         out.push_str("bind -n M-s choose-session\n\n");
     }
 
+    if config.keybindings.pane_clear {
+        out.push_str("# --- Pane clear ---\n");
+        out.push_str("bind -n M-k send-keys -R \\; clear-history \\; send-keys Enter\n\n");
+    }
+
     // Mouse click binding is managed by tmux-windowbar apply
     // (includes click-handler chain + confirm-before support)
 
