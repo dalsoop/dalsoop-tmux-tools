@@ -31,7 +31,15 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .status();
 
     match reload {
-        Ok(s) if s.success() => println!("tmux config reloaded"),
+        Ok(s) if s.success() => {
+            println!("tmux config reloaded");
+
+            // Re-apply windowbar settings (mouse click bindings, hooks)
+            // These are runtime-only and not persisted in .tmux.conf
+            let _ = Command::new("tmux-windowbar")
+                .args(["apply"])
+                .status();
+        }
         _ => println!("tmux not running — config will apply on next start"),
     }
 
