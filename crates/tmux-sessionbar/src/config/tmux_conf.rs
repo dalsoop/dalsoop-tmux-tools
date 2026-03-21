@@ -60,12 +60,8 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
         out.push_str("bind -n M-s choose-session\n\n");
     }
 
-    // Mouse click: delegate to binary's `click` subcommand
-    // run -C expands #{mouse_status_range} before passing to run-shell
-    out.push_str("# --- Mouse: click session/window/button blocks ---\n");
-    out.push_str(&format!(
-        "bind -Troot MouseDown1Status if-shell -F '1' \"run-shell '{binary_path} click \\\"#{{mouse_status_range}}\\\"'\"\n\n"
-    ));
+    // Mouse click binding is managed by tmux-windowbar apply
+    // (includes click-handler chain + confirm-before support)
 
     // Hooks: update session list on session events
     out.push_str("# --- Hooks: update session list dynamically ---\n");
@@ -77,7 +73,25 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
     out.push('\n');
 
     // Run once on load to populate initial status
-    out.push_str(&format!("{hook_cmd}\n"));
+    out.push_str(&format!("{hook_cmd}\n\n"));
+
+    // TPM + session persistence plugins
+    out.push_str("# --- Plugins (TPM) ---\n");
+    out.push_str("set -g @plugin 'tmux-plugins/tpm'\n");
+    out.push_str("set -g @plugin 'tmux-plugins/tmux-resurrect'\n");
+    out.push_str("set -g @plugin 'tmux-plugins/tmux-continuum'\n");
+    out.push_str("set -g @continuum-restore 'on'\n");
+    out.push_str("set -g @continuum-save-interval '15'\n");
+    out.push_str("set -g @resurrect-capture-pane-contents 'on'\n");
+    out.push_str("set -g @plugin 'tmux-plugins/tmux-yank'\n");
+    out.push_str("set -g @plugin 'Morantron/tmux-fingers'\n");
+    out.push_str("set -g @plugin 'tmux-plugins/tmux-open'\n");
+    out.push_str("set -g @plugin 'tmux-plugins/tmux-logging'\n");
+    out.push_str("set -g @plugin 'tmux-plugins/tmux-sensible'\n");
+    out.push_str("set -g @plugin 'rickstaa/tmux-notify'\n");
+    out.push_str("set -g @plugin 'jaclu/tmux-menus'\n\n");
+    out.push_str("# TPM init (must be last)\n");
+    out.push_str("run '~/.tmux/plugins/tpm/tpm'\n");
 
     out
 }
