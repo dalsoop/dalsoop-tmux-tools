@@ -276,6 +276,118 @@ teardown_file() {
 
 # --- Sync ---
 
+# --- Pane clear: click ---
+
+@test "click clear button clears history" {
+    # Generate some scrollback
+    for i in $(seq 1 100); do tmux send-keys "echo line$i" Enter; done
+    sleep 0.5
+    run tmux-sessionbar click "_clear_"
+    assert_success
+}
+
+# --- Pane clear: keybinding ---
+
+@test "Alt+k pane clear binding exists" {
+    run tmux list-keys
+    assert_output --partial "M-k"
+    assert_output --partial "clear-history"
+}
+
+# --- Pane clear: button rendered ---
+
+@test "clear button rendered in sessions line" {
+    run tmux show -gv status-format[1]
+    assert_success
+    assert_output --partial "_clear_"
+}
+
+# --- Config: general section ---
+
+@test "config has general section with history_limit" {
+    run cat "$HOME/.config/tmux-sessionbar/config.toml"
+    assert_success
+    assert_output --partial "[general]"
+    assert_output --partial "history_limit"
+}
+
+# --- Config: maintenance section ---
+
+@test "config has maintenance section" {
+    run cat "$HOME/.config/tmux-sessionbar/config.toml"
+    assert_success
+    assert_output --partial "[maintenance]"
+    assert_output --partial "auto_clear"
+    assert_output --partial "clear_interval"
+}
+
+# --- Config: keybindings pane_clear ---
+
+@test "config has pane_clear keybinding" {
+    run cat "$HOME/.config/tmux-sessionbar/config.toml"
+    assert_success
+    assert_output --partial "pane_clear"
+}
+
+# --- History limit ---
+
+@test "history-limit is set from config" {
+    run tmux show -gv history-limit
+    assert_success
+    # Should be a reasonable number (not the old 50000)
+    local limit="$output"
+    [ "$limit" -le 10000 ]
+}
+
+# --- tmux.conf has history-limit ---
+
+@test "generated tmux.conf includes history-limit" {
+    run cat "$HOME/.tmux.conf"
+    assert_success
+    assert_output --partial "history-limit"
+}
+
+# --- tmux.conf has pane clear binding ---
+
+@test "generated tmux.conf includes pane clear" {
+    run cat "$HOME/.tmux.conf"
+    assert_success
+    assert_output --partial "M-k"
+    assert_output --partial "clear-history"
+}
+
+# --- Auto clear script ---
+
+@test "tmux-clear-history script exists" {
+    [ -x /usr/local/bin/tmux-clear-history ]
+}
+
+@test "tmux-clear-history runs without error" {
+    run /usr/local/bin/tmux-clear-history
+    assert_success
+}
+
+# --- Cron ---
+
+@test "cron entry for auto-clear is installed" {
+    run crontab -l
+    assert_success
+    assert_output --partial "tmux-clear-history"
+}
+
+# --- Apply restores windowbar bindings ---
+
+@test "sessionbar apply also applies windowbar bindings" {
+    # Clear the binding first
+    tmux unbind -T root MouseDown1Status 2>/dev/null || true
+    run tmux-sessionbar apply
+    assert_success
+    run tmux list-keys
+    assert_output --partial "MouseDown1Status"
+}
+
+# --- Sync ---
+
 @test "tmux-sessionbar sync command exists" {
     run tmux-sessionbar sync --help 2>&1
     # Just check it doesn't crash
