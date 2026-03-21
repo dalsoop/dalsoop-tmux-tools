@@ -34,3 +34,6 @@ tmux-sessionbar plugin-install    # Reinstall all plugins
 - Mouse clicks handled by `tmux-click-handler` script with confirm-before for kills
 - CPU/memory stats read from `/proc/loadavg` and `/proc/meminfo`
 - Plugins managed as `[[plugins]]` entries in `config.toml`
+- 🧹 clear button and `Alt+k` keybinding to clear pane screen + scrollback
+- Configurable `history-limit` (default 5000) and cron-based auto-cleanup
+- `apply` automatically re-applies windowbar mouse bindings

@@ -27,6 +27,7 @@ Apps      🔐 spf  🤖 claude  🧠 codex  📊 htop  🐍 python3  🖥️ ba
 - **CPU/Memory monitor** — load average + color-coded memory usage on Sessions line
 - **Layout save/restore** — save and reload window/pane layouts
 - **Double-click rename** — double-click session or window block to rename
+- **Pane clear** — 🧹 button or `Alt+k` to clear screen + scrollback; cron auto-cleanup every 30 min
 - **Custom color mapping** — per-command colors in `config.toml`
 - **Plugin manager** — add/remove/list tmux plugins via CLI, managed in `config.toml`
 - **Account sync** — sync configs + TPM + plugins to all system accounts
@@ -105,8 +106,16 @@ blocks = ["session-list"]
 [status.right]
 blocks = ["hostname", "datetime"]
 
+[general]
+history_limit = 5000          # scrollback lines per pane (default: 5000)
+
 [keybindings]
 session_switch = true
+pane_clear = true             # Alt+k to clear pane scrollback
+
+[maintenance]
+auto_clear = true             # periodic scrollback cleanup via cron
+clear_interval = 30           # interval in minutes
 
 # Plugins (managed via plugin-add/plugin-rm)
 [[plugins]]
@@ -163,6 +172,7 @@ mode = "window"  # "window" or "pane"
 | Click user | Switch to user session + filter view |
 | Click app | Launch in new window |
 | Click 🌐 | Show all (clear user filter) |
+| Click 🧹 | Clear current pane scrollback |
 | Double-click session/window | Rename |
 
 ### Keyboard
@@ -171,6 +181,7 @@ mode = "window"  # "window" or "pane"
 |---------|--------|
 | `Alt+(` / `Alt+)` | Previous/next session |
 | `Alt+s` | Session chooser |
+| `Alt+k` | Clear current pane screen + scrollback |
 | `prefix + Ctrl-s` | Save session (resurrect) |
 | `prefix + Ctrl-r` | Restore session (resurrect) |
 | `prefix + Space` | Thumbs: highlight URLs/paths/hashes to copy |
