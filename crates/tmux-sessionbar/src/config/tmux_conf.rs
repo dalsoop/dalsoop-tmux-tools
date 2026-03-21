@@ -18,7 +18,7 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
     // Status bar global
     out.push_str("# --- Status bar ---\n");
     out.push_str(&format!("set -g status-interval {}\n", config.status.interval));
-    out.push_str("set -g status on\n");
+    out.push_str("set -g status 5\n");
     out.push_str(&format!("set -g status-position {}\n", config.status.position));
     out.push_str(&format!(
         "set -g status-style \"bg={},fg={}\"\n",
@@ -78,8 +78,9 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
     out.push_str(&format!("set-hook -g session-renamed \"{hook_cmd}\"\n"));
     out.push('\n');
 
-    // Run once on load to populate initial status
-    out.push_str(&format!("{hook_cmd}\n\n"));
+    // Run once on load to populate initial status (synchronous — no -b flag)
+    let init_cmd = format!("run-shell '{binary_path} render-status left'");
+    out.push_str(&format!("{init_cmd}\n\n"));
 
     // Plugins from config.toml
     out.push_str("# --- Plugins (TPM) ---\n");
@@ -96,6 +97,150 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
     out.push_str("run '~/.tmux/plugins/tpm/tpm'\n");
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::template::default_config;
+
+    fn make(config: &Config) -> String {
+        generate(config, "/usr/local/bin/tmux-sessionbar")
+    }
+
+    #[test]
+    fn status_uses_multiline_mode() {
+        let out = make(&default_config());
+        assert!(
+            out.contains("set -g status 5\n"),
+            "should set status to 5-line mode, not 'on'"
+        );
+        assert!(
+            !out.contains("set -g status on"),
+            "must not contain 'set -g status on'"
+        );
+    }
+
+    #[test]
+    fn initial_render_is_synchronous() {
+        let out = make(&default_config());
+        let init_line = out
+            .lines()
+            .filter(|l| l.starts_with("run-shell '"))
+            .find(|l| l.contains("render-status left"));
+        assert!(init_line.is_some(), "initial render-status line must exist");
+        assert!(
+            !init_line.unwrap().contains("-b"),
+            "initial render must be synchronous (no -b flag)"
+        );
+    }
+
+    #[test]
+    fn hooks_remain_async() {
+        let out = make(&default_config());
+        for hook in &[
+            "client-session-changed",
+            "session-created",
+            "session-closed",
+            "session-renamed",
+        ] {
+            let hook_line = out
+                .lines()
+                .find(|l| l.contains(&format!("set-hook -g {hook}")))
+                .unwrap_or_else(|| panic!("hook {hook} must be present"));
+            assert!(
+                hook_line.contains("run-shell -b"),
+                "hook {hook} must use async -b flag"
+            );
+        }
+    }
+
+    #[test]
+    fn uses_correct_binary_path() {
+        let custom = "/opt/bin/my-sessionbar";
+        let out = generate(&default_config(), custom);
+        assert!(out.contains(&format!("run-shell '{custom} render-status left'")));
+        assert!(out.contains(&format!("run-shell -b '{custom} render-status left'")));
+    }
+
+    #[test]
+    fn disabled_plugin_excluded() {
+        let mut config = default_config();
+        config.plugins.iter_mut().for_each(|p| {
+            if p.name == "fcsonline/tmux-thumbs" {
+                p.enabled = Some(false);
+            }
+        });
+        let out = make(&config);
+        assert!(!out.contains("fcsonline/tmux-thumbs"));
+    }
+
+    #[test]
+    fn keybindings_toggle() {
+        let mut config = default_config();
+        config.keybindings.session_switch = false;
+        config.keybindings.pane_clear = false;
+        let out = make(&config);
+        assert!(!out.contains("bind -n M-("));
+        assert!(!out.contains("bind -n M-k"));
+    }
+
+    #[test]
+    fn right_segment_renders_blocks() {
+        let out = make(&default_config());
+        assert!(out.contains("#H"), "hostname block should contain #H");
+        assert!(out.contains("%H:%M"), "datetime block should contain %H:%M");
+    }
+
+    #[test]
+    fn config_roundtrip_from_toml() {
+        let toml_str = concat!(
+            "[general]\n",
+            "history_limit = 10000\n",
+            "\n",
+            "[status]\n",
+            "interval = 5\n",
+            "position = \"bottom\"\n",
+            "bg = \"#000000\"\n",
+            "fg = \"#ffffff\"\n",
+            "\n",
+            "[status.left]\n",
+            "blocks = [\"session-list\"]\n",
+            "length = 200\n",
+            "\n",
+            "[status.right]\n",
+            "blocks = [\"hostname\"]\n",
+            "length = 40\n",
+            "\n",
+            "[blocks.session-list]\n",
+            "active_fg = \"#000\"\n",
+            "active_bg = \"#fff\"\n",
+            "inactive_fg = \"#aaa\"\n",
+            "inactive_bg = \"#333\"\n",
+            "separator = \"|\"\n",
+            "show_new_button = false\n",
+            "show_kill_button = false\n",
+            "button_fg = \"#000\"\n",
+            "button_bg = \"#fff\"\n",
+            "kill_bg = \"#f00\"\n",
+            "\n",
+            "[blocks.hostname]\n",
+            "fg = \"#000\"\n",
+            "bg = \"#0ff\"\n",
+            "format = \" HOST \"\n",
+            "\n",
+            "[keybindings]\n",
+            "session_switch = false\n",
+            "pane_clear = false\n",
+        );
+        let config: Config = toml::from_str(toml_str).expect("valid toml");
+        let out = make(&config);
+        assert!(out.contains("set -g status-interval 5\n"));
+        assert!(out.contains("set -g status-position bottom\n"));
+        assert!(out.contains("set -g history-limit 10000\n"));
+        assert!(out.contains("set -g status-left-length 200\n"));
+        assert!(!out.contains("bind -n M-("));
+    }
 }
 
 fn render_right_segment(blocks: &[String], config: &Config) -> String {
