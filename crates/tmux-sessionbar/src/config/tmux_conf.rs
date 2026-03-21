@@ -75,22 +75,18 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
     // Run once on load to populate initial status
     out.push_str(&format!("{hook_cmd}\n\n"));
 
-    // TPM + session persistence plugins
+    // Plugins from config.toml
     out.push_str("# --- Plugins (TPM) ---\n");
     out.push_str("set -g @plugin 'tmux-plugins/tpm'\n");
-    out.push_str("set -g @plugin 'tmux-plugins/tmux-resurrect'\n");
-    out.push_str("set -g @plugin 'tmux-plugins/tmux-continuum'\n");
-    out.push_str("set -g @continuum-restore 'on'\n");
-    out.push_str("set -g @continuum-save-interval '15'\n");
-    out.push_str("set -g @resurrect-capture-pane-contents 'on'\n");
-    out.push_str("set -g @plugin 'tmux-plugins/tmux-yank'\n");
-    out.push_str("set -g @plugin 'Morantron/tmux-fingers'\n");
-    out.push_str("set -g @plugin 'tmux-plugins/tmux-open'\n");
-    out.push_str("set -g @plugin 'tmux-plugins/tmux-logging'\n");
-    out.push_str("set -g @plugin 'tmux-plugins/tmux-sensible'\n");
-    out.push_str("set -g @plugin 'rickstaa/tmux-notify'\n");
-    out.push_str("set -g @plugin 'jaclu/tmux-menus'\n\n");
-    out.push_str("# TPM init (must be last)\n");
+    for plugin in &config.plugins {
+        if plugin.enabled.unwrap_or(true) {
+            out.push_str(&format!("set -g @plugin '{}'\n", plugin.name));
+            for opt in &plugin.options {
+                out.push_str(&format!("set -g {opt}\n"));
+            }
+        }
+    }
+    out.push_str("\n# TPM init (must be last)\n");
     out.push_str("run '~/.tmux/plugins/tpm/tpm'\n");
 
     out

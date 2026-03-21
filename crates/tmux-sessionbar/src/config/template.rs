@@ -4,12 +4,23 @@ use std::path::PathBuf;
 pub const CONFIG_DIR: &str = ".config/tmux-sessionbar";
 pub const CONFIG_FILE: &str = "config.toml";
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PluginEntry {
+    pub name: String,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub options: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub status: StatusConfig,
     pub blocks: BlocksConfig,
     #[serde(default)]
     pub keybindings: KeybindingsConfig,
+    #[serde(default = "default_plugins")]
+    pub plugins: Vec<PluginEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -120,7 +131,7 @@ impl Default for DatetimeBlock {
 }
 
 fn default_interval() -> u32 { 2 }
-fn default_position() -> String { "bottom".into() }
+fn default_position() -> String { "top".into() }
 fn default_bg() -> String { "#282c34".into() }
 fn default_fg() -> String { "#abb2bf".into() }
 fn default_length() -> u32 { 120 }
@@ -138,6 +149,25 @@ fn default_true() -> bool { true }
 fn default_button_fg() -> String { "#282c34".into() }
 fn default_button_bg() -> String { "#61afef".into() }
 fn default_kill_bg() -> String { "#e06c75".into() }
+
+fn default_plugins() -> Vec<PluginEntry> {
+    vec![
+        PluginEntry { name: "tmux-plugins/tmux-resurrect".into(), enabled: Some(true), options: vec![
+            "@resurrect-capture-pane-contents 'on'".into(),
+        ]},
+        PluginEntry { name: "tmux-plugins/tmux-continuum".into(), enabled: Some(true), options: vec![
+            "@continuum-restore 'on'".into(),
+            "@continuum-save-interval '15'".into(),
+        ]},
+        PluginEntry { name: "tmux-plugins/tmux-yank".into(), enabled: Some(true), options: vec![] },
+        PluginEntry { name: "fcsonline/tmux-thumbs".into(), enabled: Some(true), options: vec![] },
+        PluginEntry { name: "tmux-plugins/tmux-open".into(), enabled: Some(true), options: vec![] },
+        PluginEntry { name: "tmux-plugins/tmux-logging".into(), enabled: Some(true), options: vec![] },
+        PluginEntry { name: "tmux-plugins/tmux-sensible".into(), enabled: Some(true), options: vec![] },
+        PluginEntry { name: "rickstaa/tmux-notify".into(), enabled: Some(true), options: vec![] },
+        PluginEntry { name: "jaclu/tmux-menus".into(), enabled: Some(true), options: vec![] },
+    ]
+}
 
 pub fn config_dir() -> PathBuf {
     dirs_home().join(CONFIG_DIR)
@@ -184,6 +214,7 @@ pub fn default_config() -> Config {
             datetime: DatetimeBlock::default(),
         },
         keybindings: KeybindingsConfig::default(),
+        plugins: default_plugins(),
     }
 }
 

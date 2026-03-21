@@ -30,6 +30,20 @@ enum Commands {
     },
     /// Sync tmux-tools config to all system accounts
     Sync,
+    /// Add a tmux plugin (e.g. tmux-plugins/tmux-yank)
+    PluginAdd {
+        /// Plugin name (e.g. tmux-plugins/tmux-yank)
+        name: String,
+    },
+    /// Remove a tmux plugin
+    PluginRm {
+        /// Plugin name
+        name: String,
+    },
+    /// List installed plugins
+    PluginList,
+    /// Install all enabled plugins via TPM
+    PluginInstall,
 }
 
 fn main() {
@@ -42,6 +56,10 @@ fn main() {
         Commands::RenderStatus { segment } => commands::render::run(&segment),
         Commands::Click { range } => commands::click::run(&range),
         Commands::Sync => commands::sync::run(),
+        Commands::PluginAdd { name } => commands::plugin::add(&name),
+        Commands::PluginRm { name } => commands::plugin::remove(&name),
+        Commands::PluginList => commands::plugin::list(),
+        Commands::PluginInstall => commands::plugin::install(),
     };
 
     if let Err(e) = result {

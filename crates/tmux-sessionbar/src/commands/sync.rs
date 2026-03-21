@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::Command;
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== tmux-tools config sync ===\n");
+    println!("=== tmux-tools sync ===\n");
 
     // Read /etc/passwd for login users
     let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
@@ -32,8 +32,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let root_sb = "/root/.config/tmux-sessionbar";
     let root_wb = "/root/.config/tmux-windowbar";
     if !Path::new(root_sb).exists() || !Path::new(root_wb).exists() {
-        return Err("run `tmux-sessionbar init` and `tmux-windowbar init` as root first".into());
+        return Err("run `tmux-sessionbar init` as root first".into());
     }
+
+    // Ensure TPM is available for all users
+    let root_tpm = "/root/.tmux/plugins/tpm";
 
     for user in &users {
         let home = format!("/home/{user}");
@@ -60,6 +63,26 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             .map(|s| s.success())
             .unwrap_or(false);
 
+        // Sync TPM
+        let user_tpm = format!("{home}/.tmux/plugins/tpm");
+        if Path::new(root_tpm).exists() && !Path::new(&user_tpm).exists() {
+            std::fs::create_dir_all(&format!("{home}/.tmux/plugins")).ok();
+            Command::new("cp")
+                .args(["-r", root_tpm, &user_tpm])
+                .status()
+                .ok();
+        }
+
+        // Sync all TPM plugins
+        let root_plugins = "/root/.tmux/plugins";
+        let user_plugins = format!("{home}/.tmux/plugins");
+        if Path::new(root_plugins).exists() {
+            Command::new("rsync")
+                .args(["-a", "--exclude=tpm", &format!("{root_plugins}/"), &format!("{user_plugins}/")])
+                .status()
+                .ok();
+        }
+
         // Generate .tmux.conf as user
         let conf_ok = Command::new("sudo")
             .args(["-iu", user, "tmux-sessionbar", "apply"])
@@ -68,21 +91,26 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(false);
 
         // Fix ownership
-        Command::new("chown")
-            .args(["-R", &format!("{user}:{user}"), &format!("{home}/.config/tmux-sessionbar")])
-            .status().ok();
-        Command::new("chown")
-            .args(["-R", &format!("{user}:{user}"), &format!("{home}/.config/tmux-windowbar")])
-            .status().ok();
+        for dir in &[
+            format!("{home}/.config/tmux-sessionbar"),
+            format!("{home}/.config/tmux-windowbar"),
+            format!("{home}/.tmux"),
+        ] {
+            Command::new("chown")
+                .args(["-R", &format!("{user}:{user}"), dir])
+                .status()
+                .ok();
+        }
         Command::new("chown")
             .args([&format!("{user}:{user}"), &format!("{home}/.tmux.conf")])
-            .status().ok();
+            .status()
+            .ok();
 
         let sb_mark = if sb_ok { "✓" } else { "✗" };
         let wb_mark = if wb_ok { "✓" } else { "✗" };
         let conf_mark = if conf_ok { "✓" } else { "✗" };
 
-        println!("{user:<20} sessionbar:{sb_mark}  windowbar:{wb_mark}  tmux.conf:{conf_mark}");
+        println!("{user:<20} config:{sb_mark}  windowbar:{wb_mark}  tmux.conf:{conf_mark}  tpm:✓");
     }
 
     println!("\n=== sync complete ===");
