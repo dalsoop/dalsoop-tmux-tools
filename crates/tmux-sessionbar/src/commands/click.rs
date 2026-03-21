@@ -7,6 +7,10 @@ pub fn run(range: &str) -> Result<(), Box<dyn std::error::Error>> {
         Command::new("tmux")
             .args(["select-window"])
             .status()?;
+    } else if range == "_clear_" {
+        Command::new("tmux")
+            .args(["send-keys", "-R", ";", "clear-history"])
+            .status()?;
     } else if range == "_new_" {
         Command::new("tmux")
             .args(["new-session", "-d"])

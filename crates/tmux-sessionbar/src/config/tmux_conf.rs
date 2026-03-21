@@ -63,7 +63,7 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
 
     if config.keybindings.pane_clear {
         out.push_str("# --- Pane clear ---\n");
-        out.push_str("bind -n M-k send-keys -R \\; clear-history \\; send-keys Enter\n\n");
+        out.push_str("bind -n M-k send-keys -R \\; clear-history\n\n");
     }
 
     // Mouse click binding is managed by tmux-windowbar apply
