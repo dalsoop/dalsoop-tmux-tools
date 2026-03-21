@@ -12,7 +12,8 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
     out.push_str("set -g base-index 1\n");
     out.push_str("setw -g pane-base-index 1\n");
     out.push_str("set -g renumber-windows on\n");
-    out.push_str("set -g escape-time 0\n\n");
+    out.push_str("set -g escape-time 0\n");
+    out.push_str(&format!("set -g history-limit {}\n\n", config.general.history_limit));
 
     // Status bar global
     out.push_str("# --- Status bar ---\n");

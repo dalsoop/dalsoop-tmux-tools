@@ -14,11 +14,46 @@ pub struct PluginEntry {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct GeneralConfig {
+    #[serde(default = "default_history_limit")]
+    pub history_limit: u32,
+}
+
+impl Default for GeneralConfig {
+    fn default() -> Self {
+        Self {
+            history_limit: default_history_limit(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MaintenanceConfig {
+    #[serde(default = "default_true")]
+    pub auto_clear: bool,
+    #[serde(default = "default_clear_interval")]
+    pub clear_interval: u32,
+}
+
+impl Default for MaintenanceConfig {
+    fn default() -> Self {
+        Self {
+            auto_clear: true,
+            clear_interval: default_clear_interval(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(default)]
+    pub general: GeneralConfig,
     pub status: StatusConfig,
     pub blocks: BlocksConfig,
     #[serde(default)]
     pub keybindings: KeybindingsConfig,
+    #[serde(default)]
+    pub maintenance: MaintenanceConfig,
     #[serde(default = "default_plugins")]
     pub plugins: Vec<PluginEntry>,
 }
@@ -151,6 +186,8 @@ fn default_hostname_format() -> String { " #H ".into() }
 fn default_datetime_bg() -> String { "#c678dd".into() }
 fn default_datetime_format() -> String { " %H:%M ".into() }
 fn default_true() -> bool { true }
+fn default_history_limit() -> u32 { 5000 }
+fn default_clear_interval() -> u32 { 30 }
 fn default_button_fg() -> String { "#282c34".into() }
 fn default_button_bg() -> String { "#61afef".into() }
 fn default_kill_bg() -> String { "#e06c75".into() }
@@ -188,6 +225,7 @@ fn dirs_home() -> PathBuf {
 
 pub fn default_config() -> Config {
     Config {
+        general: GeneralConfig::default(),
         status: StatusConfig {
             interval: default_interval(),
             position: default_position(),
@@ -219,6 +257,7 @@ pub fn default_config() -> Config {
             datetime: DatetimeBlock::default(),
         },
         keybindings: KeybindingsConfig::default(),
+        maintenance: MaintenanceConfig::default(),
         plugins: default_plugins(),
     }
 }
