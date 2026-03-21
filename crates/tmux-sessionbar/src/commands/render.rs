@@ -112,6 +112,16 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
             _ => {}
         }
     }
+    // Clear pane button
+    let clear_btn = if config.keybindings.pane_clear {
+        format!(
+            " #[range=user|_clear_]#[fg={},bg=#e5c07b] \u{1f9f9} #[norange default]",
+            sl.active_fg,
+        )
+    } else {
+        String::new()
+    };
+
     let right_content = format!("{sys_stats}{}", right_parts.join(""));
 
     // Get view switcher from windowbar
@@ -136,7 +146,7 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
         format!(
             "#[align=left default]{session_label}{session_blocks} \
              {windows}\
-             #[align=right default]{right_content} {view_switcher}"
+             #[align=right default]{right_content} {view_switcher}{clear_btn}"
         )
     } else {
         format!(
@@ -152,7 +162,7 @@ fn render_left() -> Result<(), Box<dyn std::error::Error>> {
              #[push-default]#{{T:window-status-current-format}}#[pop-default]\
              #[norange list=on default]#{{?window_end_flag,,#{{window-status-separator}}}}\
              }}\
-             #[nolist align=right default]{right_content} {view_switcher}"
+             #[nolist align=right default]{right_content} {view_switcher}{clear_btn}"
         )
     };
 
