@@ -1,8 +1,13 @@
 use crate::config::template;
 use crate::config::tmux_conf;
 use std::fs;
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
+
+const CLEAR_HISTORY_SCRIPT: &str = "/usr/local/bin/tmux-clear-history";
+const CLEAR_HISTORY_MARKER: &str = "tmux-clear-history";
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let home = home_dir();
@@ -41,6 +46,105 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .status();
         }
         _ => println!("tmux not running — config will apply on next start"),
+    }
+
+    // Maintenance: periodic scrollback clear via cron
+    setup_maintenance(&config)?;
+
+    Ok(())
+}
+
+fn setup_maintenance(config: &template::Config) -> Result<(), Box<dyn std::error::Error>> {
+    if config.maintenance.auto_clear {
+        // Write the clear-history helper script
+        let script = "#!/bin/bash\n\
+            tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null | while read pane; do\n\
+            \ttmux clear-history -t \"$pane\" 2>/dev/null\n\
+            done\n";
+
+        let mut file = fs::File::create(CLEAR_HISTORY_SCRIPT)?;
+        file.write_all(script.as_bytes())?;
+        fs::set_permissions(CLEAR_HISTORY_SCRIPT, fs::Permissions::from_mode(0o755))?;
+        println!("installed: {}", CLEAR_HISTORY_SCRIPT);
+
+        // Install cron entry
+        let existing = Command::new("crontab")
+            .arg("-l")
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+
+        // Filter out old tmux-clear-history entries
+        let filtered: Vec<&str> = existing
+            .lines()
+            .filter(|line| !line.contains(CLEAR_HISTORY_MARKER))
+            .collect();
+
+        let cron_entry = format!(
+            "*/{} * * * * {}",
+            config.maintenance.clear_interval, CLEAR_HISTORY_SCRIPT
+        );
+
+        let mut new_crontab = filtered.join("\n");
+        if !new_crontab.is_empty() && !new_crontab.ends_with('\n') {
+            new_crontab.push('\n');
+        }
+        new_crontab.push_str(&cron_entry);
+        new_crontab.push('\n');
+
+        let mut child = Command::new("crontab")
+            .arg("-")
+            .stdin(std::process::Stdio::piped())
+            .spawn()?;
+
+        if let Some(ref mut stdin) = child.stdin {
+            stdin.write_all(new_crontab.as_bytes())?;
+        }
+        child.wait()?;
+
+        println!(
+            "cron installed: every {} min -> {}",
+            config.maintenance.clear_interval, CLEAR_HISTORY_SCRIPT
+        );
+    } else {
+        // Remove cron entry if auto_clear is disabled
+        remove_cron_entry()?;
+
+        // Remove script if it exists
+        if std::path::Path::new(CLEAR_HISTORY_SCRIPT).exists() {
+            fs::remove_file(CLEAR_HISTORY_SCRIPT)?;
+            println!("removed: {}", CLEAR_HISTORY_SCRIPT);
+        }
+    }
+
+    Ok(())
+}
+
+fn remove_cron_entry() -> Result<(), Box<dyn std::error::Error>> {
+    let existing = Command::new("crontab")
+        .arg("-l")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+
+    if existing.contains(CLEAR_HISTORY_MARKER) {
+        let filtered: Vec<&str> = existing
+            .lines()
+            .filter(|line| !line.contains(CLEAR_HISTORY_MARKER))
+            .collect();
+
+        let new_crontab = filtered.join("\n") + "\n";
+
+        let mut child = Command::new("crontab")
+            .arg("-")
+            .stdin(std::process::Stdio::piped())
+            .spawn()?;
+
+        if let Some(ref mut stdin) = child.stdin {
+            stdin.write_all(new_crontab.as_bytes())?;
+        }
+        child.wait()?;
+        println!("cron entry removed: {}", CLEAR_HISTORY_MARKER);
     }
 
     Ok(())
