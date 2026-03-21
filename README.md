@@ -198,7 +198,7 @@ mode = "window"  # "window" or "pane"
 | tmux-thumbs | Highlight URLs/paths/hashes for quick copy |
 | tmux-open | Open selected URL/file |
 | tmux-logging | Log pane output to file |
-| tmux-sensible | Optimized defaults (50k scrollback, etc) |
+| tmux-sensible | Optimized defaults (UTF-8, escape-time, etc) |
 | tmux-notify | Notification when long command finishes |
 | tmux-menus | Popup menu for tmux commands |
 
