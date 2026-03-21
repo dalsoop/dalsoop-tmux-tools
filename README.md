@@ -205,7 +205,7 @@ mode = "window"  # "window" or "pane"
 ## Testing
 
 ```bash
-# Run smoke tests (34 tests)
+# Run smoke tests (47 tests)
 bats tests/smoke.bats
 
 # Or via Docker
