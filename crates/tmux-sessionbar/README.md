@@ -1,84 +1,36 @@
 # tmux-sessionbar
 
-Clickable session list for the tmux status bar, built in Rust.
+Session management, status bar generation, plugin manager, and account sync for tmux. Built in Rust.
 
-Switch between tmux sessions by clicking on session blocks in the status bar — no existing tmux plugin supports this. Uses tmux's native `range=user` format with `run -C` to make each session block a clickable target.
-
-## Features
-
-- **Clickable session blocks** — click any session in the status bar to switch to it
-- **Auto-updating** — session list updates instantly via tmux hooks (no polling)
-- **Customizable blocks** — configure colors, layout, and which blocks appear via `config.toml`
-- **Single binary** — no shell scripts, no TPM, no dependencies beyond tmux >= 3.4
-- **Template system** — status bar managed as configurable blocks (session-list, hostname, datetime)
-
-## Install
+## Commands
 
 ```bash
-# From the workspace root
-cargo build --release -p tmux-sessionbar
-sudo cp target/release/tmux-sessionbar /usr/local/bin/
+tmux-sessionbar init              # One-step full setup (TPM, plugins, windowbar, bindings)
+tmux-sessionbar apply             # Regenerate .tmux.conf and reload
+tmux-sessionbar status            # Show diagnostics
+tmux-sessionbar sync              # Sync configs to all system accounts
 
-# Initialize
-tmux-sessionbar init
+tmux-sessionbar plugin-list       # List plugins
+tmux-sessionbar plugin-add <name> # Add + install plugin
+tmux-sessionbar plugin-rm <name>  # Remove + cleanup plugin
+tmux-sessionbar plugin-install    # Reinstall all plugins
 ```
 
-## Usage
+## What `init` does
 
-```bash
-tmux-sessionbar init       # First-time setup
-tmux-sessionbar apply      # Regenerate config after editing config.toml
-tmux-sessionbar status     # Show diagnostics
-```
-
-## Configuration
-
-Edit `~/.config/tmux-sessionbar/config.toml`:
-
-```toml
-[status]
-interval = 2
-position = "top"           # "top" or "bottom"
-bg = "#282c34"
-fg = "#abb2bf"
-
-[status.left]
-blocks = ["session-list"]
-
-[status.right]
-blocks = ["hostname", "datetime"]
-
-[blocks.session-list]
-active_fg = "#282c34"
-active_bg = "#98c379"      # Green for current session
-inactive_fg = "#abb2bf"
-inactive_bg = "#3e4452"
-
-[blocks.hostname]
-fg = "#282c34"
-bg = "#61afef"
-format = " #H "
-
-[blocks.datetime]
-fg = "#282c34"
-bg = "#c678dd"
-format = " %H:%M "
-```
-
-After editing, run `tmux-sessionbar apply` to regenerate and reload.
-
-## Key Bindings
-
-| Binding | Action |
-|---------|--------|
-| Mouse click on session block | Switch to that session |
-| `Alt+(` | Previous session |
-| `Alt+)` | Next session |
-| `Alt+s` | Session chooser |
+1. Creates `~/.config/tmux-sessionbar/config.toml`
+2. Generates `~/.tmux.conf` with hooks, key bindings, plugin config
+3. Installs TPM if missing
+4. Initializes tmux-windowbar (config + mouse bindings)
+5. Reloads tmux config
+6. Installs all plugins via TPM
+7. Creates `/tmp/tmux-{uid}` dir (LXC compatibility)
+8. Symlinks binaries to `/usr/bin` if needed (PATH fix)
 
 ## How It Works
 
-1. `init` / `apply` generates `~/.tmux.conf` with hooks that call the binary on session events
-2. On each event (session created/closed/switched/renamed), the binary sets `status-format[0]` directly
-3. Each session block is wrapped in `#[range=user|session_name]`, making it a clickable region
-4. Mouse clicks are bound via `run -C 'switch-client -t ...'` to expand the range value and switch sessions
+- `status-format[1]` is set directly with session blocks wrapped in `#[range=user|name]`
+- tmux hooks (`client-session-changed`, `session-created`, etc.) trigger re-render
+- Mouse clicks handled by `tmux-click-handler` script with confirm-before for kills
+- CPU/memory stats read from `/proc/loadavg` and `/proc/meminfo`
+- Plugins managed as `[[plugins]]` entries in `config.toml`
