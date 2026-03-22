@@ -27,9 +27,55 @@ pub struct AppEntry {
 pub struct Config {
     pub window: WindowConfig,
     #[serde(default)]
+    pub theme: ThemeConfig,
+    #[serde(default)]
     pub colors: HashMap<String, ColorEntry>,
     #[serde(default)]
     pub apps: Vec<AppEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ThemeConfig {
+    #[serde(default = "default_users_label")]
+    pub users_label: String,
+    #[serde(default = "default_windows_label")]
+    pub windows_label: String,
+    #[serde(default = "default_panes_label")]
+    pub panes_label: String,
+    #[serde(default = "default_apps_label")]
+    pub apps_label: String,
+    #[serde(default = "default_view_active_fg")]
+    pub view_active_fg: String,
+    #[serde(default = "default_view_inactive_fg")]
+    pub view_inactive_fg: String,
+    #[serde(default = "default_view_inactive_bg")]
+    pub view_inactive_bg: String,
+    #[serde(default = "default_user_viewed_fg")]
+    pub user_viewed_fg: String,
+    #[serde(default = "default_user_viewed_bg")]
+    pub user_viewed_bg: String,
+    #[serde(default = "default_user_session_fg")]
+    pub user_session_fg: String,
+    #[serde(default = "default_user_session_bg")]
+    pub user_session_bg: String,
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            users_label: default_users_label(),
+            windows_label: default_windows_label(),
+            panes_label: default_panes_label(),
+            apps_label: default_apps_label(),
+            view_active_fg: default_view_active_fg(),
+            view_inactive_fg: default_view_inactive_fg(),
+            view_inactive_bg: default_view_inactive_bg(),
+            user_viewed_fg: default_user_viewed_fg(),
+            user_viewed_bg: default_user_viewed_bg(),
+            user_session_fg: default_user_session_fg(),
+            user_session_bg: default_user_session_bg(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -80,6 +126,17 @@ fn default_idle_bg() -> String { "#2c323c".into() }
 fn default_app_fg() -> String { "#282c34".into() }
 fn default_app_bg() -> String { "#61afef".into() }
 fn default_app_mode() -> String { "window".into() }
+fn default_users_label() -> String { "#56b6c2".into() }
+fn default_windows_label() -> String { "#c678dd".into() }
+fn default_panes_label() -> String { "#e5c07b".into() }
+fn default_apps_label() -> String { "#e06c75".into() }
+fn default_view_active_fg() -> String { "#282c34".into() }
+fn default_view_inactive_fg() -> String { "#abb2bf".into() }
+fn default_view_inactive_bg() -> String { "#3e4452".into() }
+fn default_user_viewed_fg() -> String { "#282c34".into() }
+fn default_user_viewed_bg() -> String { "#e5c07b".into() }
+fn default_user_session_fg() -> String { "#282c34".into() }
+fn default_user_session_bg() -> String { "#56b6c2".into() }
 
 pub fn config_dir() -> PathBuf {
     home_dir().join(CONFIG_DIR)
@@ -151,6 +208,7 @@ pub fn default_config() -> Config {
     ];
 
     Config {
+        theme: ThemeConfig::default(),
         window: WindowConfig {
             show_kill_button: true,
             show_new_button: true,

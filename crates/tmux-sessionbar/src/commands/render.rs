@@ -18,6 +18,7 @@ fn render_left() -> Result<()> {
 
     let config = load_config()?;
     let sl = &config.blocks.session_list;
+    let th = &config.theme;
 
     let current = tmux::query_or(&["display-message", "-p", "#S"], "");
     let view_user = tmux::query_or(&["show", "-gv", "@view_user"], "");
@@ -26,7 +27,6 @@ fn render_left() -> Result<()> {
 
     let mut parts = Vec::new();
     for name in &sessions {
-        // Filter by user if set
         if !view_user.is_empty() {
             let is_user_session = name == &view_user;
             let is_unowned = !name.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false);
@@ -41,12 +41,11 @@ fn render_left() -> Result<()> {
             click(name, &sl.inactive_fg, &sl.inactive_bg, false, &format!(" {name} "))
         };
 
-        // [x] kill button — hide for current session
         if sl.show_kill_button && *name != current {
             block.push_str(&click(
                 &format!("_k{name}"),
                 &sl.kill_bg,
-                "#282c34",
+                &config.status.bg,
                 false,
                 " x ",
             ));
@@ -57,7 +56,6 @@ fn render_left() -> Result<()> {
 
     let mut session_blocks = parts.join(&sl.separator);
 
-    // [+] new session button
     if sl.show_new_button {
         session_blocks.push_str(&format!(
             " {}",
@@ -65,9 +63,8 @@ fn render_left() -> Result<()> {
         ));
     }
 
-    let sys_stats = get_system_stats();
+    let sys_stats = get_system_stats(th);
 
-    // Build right side from config
     let mut right_parts = Vec::new();
     for block in &config.status.right.blocks {
         match block.as_str() {
@@ -88,7 +85,7 @@ fn render_left() -> Result<()> {
     let clear_btn = if config.keybindings.pane_clear {
         format!(
             " {}",
-            click("_clear_", &sl.active_fg, "#e5c07b", false, " \u{1f9f9} ")
+            click("_clear_", &sl.active_fg, &th.clear_bg, false, " \u{1f9f9} ")
         )
     } else {
         String::new()
@@ -96,7 +93,6 @@ fn render_left() -> Result<()> {
 
     let right_content = format!("{sys_stats}{}", right_parts.join(""));
 
-    // Get view switcher from windowbar
     let view_switcher = std::process::Command::new("tmux-windowbar")
         .args(["render-view"])
         .output()
@@ -105,7 +101,6 @@ fn render_left() -> Result<()> {
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default();
 
-    // Try to get window list from tmux-windowbar
     let window_section = std::process::Command::new("tmux-windowbar")
         .args(["render"])
         .output()
@@ -113,7 +108,7 @@ fn render_left() -> Result<()> {
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string());
 
-    let session_label = label("Sessions", "#98c379");
+    let session_label = label("Sessions", &th.label_fg);
     let right_section = format!("{right_content} {view_switcher}{clear_btn}");
     let format = if let Some(windows) = window_section {
         Line::new()
@@ -139,7 +134,9 @@ fn render_right() -> Result<()> {
     Ok(())
 }
 
-fn get_system_stats() -> String {
+use crate::config::template::ThemeConfig;
+
+fn get_system_stats(th: &ThemeConfig) -> String {
     let load = std::fs::read_to_string("/proc/loadavg").unwrap_or_default();
     let cpu_load = load.split_whitespace().next().unwrap_or("0");
 
@@ -157,11 +154,17 @@ fn get_system_stats() -> String {
     let total_gb = total_kb as f64 / 1048576.0;
     let mem_pct = if total_kb > 0 { (total_kb - avail_kb) * 100 / total_kb } else { 0 };
 
-    let mem_color = if mem_pct > 80 { "#e06c75" } else if mem_pct > 60 { "#e5c07b" } else { "#98c379" };
+    let mem_color = if mem_pct > 80 {
+        &th.mem_critical
+    } else if mem_pct > 60 {
+        &th.mem_warn
+    } else {
+        &th.mem_normal
+    };
 
     format!(
         "{}{}",
-        styled("#abb2bf", "#3e4452", &format!(" {cpu_load} ")),
-        styled("#282c34", mem_color, &format!(" {used_gb:.1}/{total_gb:.0}G ")),
+        styled(&th.stats_fg, &th.stats_bg, &format!(" {cpu_load} ")),
+        styled(&th.mem_fg, mem_color, &format!(" {used_gb:.1}/{total_gb:.0}G ")),
     )
 }

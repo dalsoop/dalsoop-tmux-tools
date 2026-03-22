@@ -203,22 +203,24 @@ fn get_view_mode() -> String {
 
 /// Returns view switcher string for embedding in other lines
 pub fn render_view_switcher() -> String {
+    let config = load_config().unwrap_or_else(|_| crate::config::template::default_config());
+    let th = &config.theme;
     let mode = get_view_mode();
 
     let modes = [
-        ("_vAll", "\u{1f310}", "#98c379"),
-        ("_vUser", "\u{1f464}", "#61afef"),
-        ("_vSession", "\u{1f4cb}", "#c678dd"),
-        ("_vCompact", "\u{26a1}", "#e5c07b"),
+        ("_vAll", "\u{1f310}", &th.users_label),
+        ("_vUser", "\u{1f464}", &th.windows_label),
+        ("_vSession", "\u{1f4cb}", &th.panes_label),
+        ("_vCompact", "\u{26a1}", &th.apps_label),
     ];
 
     let mut parts = Vec::new();
     for (id, emoji, color) in &modes {
         let mode_name = id.strip_prefix("_v").unwrap_or(id).to_lowercase();
         if mode == mode_name {
-            parts.push(click(id, "#282c34", color, true, &format!(" {emoji} ")));
+            parts.push(click(id, &th.view_active_fg, color, true, &format!(" {emoji} ")));
         } else {
-            parts.push(click(id, "#abb2bf", "#3e4452", false, &format!(" {emoji} ")));
+            parts.push(click(id, &th.view_inactive_fg, &th.view_inactive_bg, false, &format!(" {emoji} ")));
         }
     }
 
@@ -247,10 +249,11 @@ fn render_line_users_at(idx: usize) -> Result<()> {
 }
 
 fn render_line_windows_at(idx: usize) -> Result<()> {
+    let config = load_config()?;
     let all_windows = render_all_windows()?;
     let format = Line::new()
         .left()
-        .push(&label("Windows", "#c678dd"))
+        .push(&label("Windows", &config.theme.windows_label))
         .push(&all_windows)
         .build();
     tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
@@ -258,10 +261,11 @@ fn render_line_windows_at(idx: usize) -> Result<()> {
 }
 
 fn render_line_panes_at(idx: usize) -> Result<()> {
+    let config = load_config()?;
     let panes = render_panes()?;
     let format = Line::new()
         .left()
-        .push(&label("Panes", "#e5c07b"))
+        .push(&label("Panes", &config.theme.panes_label))
         .push(&panes)
         .build();
     tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
@@ -286,7 +290,7 @@ fn render_line_apps_at(idx: usize) -> Result<()> {
     }
     let format = Line::new()
         .left()
-        .push(&label("Apps", "#e06c75"))
+        .push(&label("Apps", &config.theme.apps_label))
         .push(&parts.join(" "))
         .build();
     tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
@@ -296,6 +300,7 @@ fn render_line_apps_at(idx: usize) -> Result<()> {
 fn render_line_users_impl(idx: usize) -> Result<()> {
     let config = load_config()?;
     let w = &config.window;
+    let th = &config.theme;
     let view_user = get_view_user();
 
     let current_user = std::env::var("USER").unwrap_or_else(|_| "root".into());
@@ -324,11 +329,11 @@ fn render_line_users_impl(idx: usize) -> Result<()> {
         let is_viewed = !view_user.is_empty() && *user == view_user;
 
         let block = if is_viewed {
-            click(&range_id, "#282c34", "#e5c07b", true, &format!(" 👤 {user} "))
+            click(&range_id, &th.user_viewed_fg, &th.user_viewed_bg, true, &format!(" 👤 {user} "))
         } else if *user == current_user {
             click(&range_id, &w.active_fg, &w.active_bg, true, &format!(" 👤 {user} "))
         } else if has_session {
-            click(&range_id, "#282c34", "#56b6c2", false, &format!(" 👤 {user} "))
+            click(&range_id, &th.user_session_fg, &th.user_session_bg, false, &format!(" 👤 {user} "))
         } else {
             click(&range_id, &w.fg, &w.bg, false, &format!(" 👤 {user} "))
         };
@@ -337,7 +342,7 @@ fn render_line_users_impl(idx: usize) -> Result<()> {
 
     let format = Line::new()
         .left()
-        .push(&label("Users", "#56b6c2"))
+        .push(&label("Users", &th.users_label))
         .push(&parts.join(" "))
         .build();
     tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;

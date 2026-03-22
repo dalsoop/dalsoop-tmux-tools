@@ -51,11 +51,48 @@ pub struct Config {
     pub status: StatusConfig,
     pub blocks: BlocksConfig,
     #[serde(default)]
+    pub theme: ThemeConfig,
+    #[serde(default)]
     pub keybindings: KeybindingsConfig,
     #[serde(default)]
     pub maintenance: MaintenanceConfig,
     #[serde(default = "default_plugins")]
     pub plugins: Vec<PluginEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ThemeConfig {
+    #[serde(default = "default_label_fg")]
+    pub label_fg: String,
+    #[serde(default = "default_clear_bg")]
+    pub clear_bg: String,
+    #[serde(default = "default_stats_fg")]
+    pub stats_fg: String,
+    #[serde(default = "default_stats_bg")]
+    pub stats_bg: String,
+    #[serde(default = "default_mem_fg")]
+    pub mem_fg: String,
+    #[serde(default = "default_mem_normal")]
+    pub mem_normal: String,
+    #[serde(default = "default_mem_warn")]
+    pub mem_warn: String,
+    #[serde(default = "default_mem_critical")]
+    pub mem_critical: String,
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            label_fg: default_label_fg(),
+            clear_bg: default_clear_bg(),
+            stats_fg: default_stats_fg(),
+            stats_bg: default_stats_bg(),
+            mem_fg: default_mem_fg(),
+            mem_normal: default_mem_normal(),
+            mem_warn: default_mem_warn(),
+            mem_critical: default_mem_critical(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -191,6 +228,14 @@ fn default_clear_interval() -> u32 { 30 }
 fn default_button_fg() -> String { "#282c34".into() }
 fn default_button_bg() -> String { "#61afef".into() }
 fn default_kill_bg() -> String { "#e06c75".into() }
+fn default_label_fg() -> String { "#98c379".into() }
+fn default_clear_bg() -> String { "#e5c07b".into() }
+fn default_stats_fg() -> String { "#abb2bf".into() }
+fn default_stats_bg() -> String { "#3e4452".into() }
+fn default_mem_fg() -> String { "#282c34".into() }
+fn default_mem_normal() -> String { "#98c379".into() }
+fn default_mem_warn() -> String { "#e5c07b".into() }
+fn default_mem_critical() -> String { "#e06c75".into() }
 
 fn default_plugins() -> Vec<PluginEntry> {
     vec![
@@ -256,6 +301,7 @@ pub fn default_config() -> Config {
             hostname: SimpleBlock::default(),
             datetime: DatetimeBlock::default(),
         },
+        theme: ThemeConfig::default(),
         keybindings: KeybindingsConfig::default(),
         maintenance: MaintenanceConfig::default(),
         plugins: default_plugins(),
