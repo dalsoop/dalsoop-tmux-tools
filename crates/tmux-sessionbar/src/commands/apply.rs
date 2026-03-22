@@ -23,6 +23,11 @@ pub fn run() -> Result<()> {
     }
 
     let config = template::load_config()?;
+
+    // Backfill new fields (e.g. [theme]) into existing config
+    let updated = toml::to_string_pretty(&config)?;
+    fs::write(&config_path, &updated)?;
+
     let binary_path = std::env::current_exe()
         .context("failed to get current exe path")?
         .to_string_lossy()
