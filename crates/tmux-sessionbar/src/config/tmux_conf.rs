@@ -100,6 +100,36 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
     out
 }
 
+fn render_right_segment(blocks: &[String], config: &Config) -> String {
+    let mut parts = Vec::new();
+
+    for block in blocks {
+        match block.as_str() {
+            "hostname" => {
+                parts.push(tmux_fmt::conf_style(
+                    &config.blocks.hostname.fg,
+                    &config.blocks.hostname.bg,
+                    false,
+                    &config.blocks.hostname.format,
+                ));
+            }
+            "datetime" => {
+                parts.push(tmux_fmt::conf_style(
+                    &config.blocks.datetime.fg,
+                    &config.blocks.datetime.bg,
+                    false,
+                    &config.blocks.datetime.format,
+                ));
+            }
+            _ => {
+                parts.push(format!("{} {block} ", tmux_fmt::RESET));
+            }
+        }
+    }
+
+    parts.join("")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,34 +268,4 @@ mod tests {
         assert!(out.contains("set -g status-left-length 200\n"));
         assert!(!out.contains("bind -n M-("));
     }
-}
-
-fn render_right_segment(blocks: &[String], config: &Config) -> String {
-    let mut parts = Vec::new();
-
-    for block in blocks {
-        match block.as_str() {
-            "hostname" => {
-                parts.push(tmux_fmt::conf_style(
-                    &config.blocks.hostname.fg,
-                    &config.blocks.hostname.bg,
-                    false,
-                    &config.blocks.hostname.format,
-                ));
-            }
-            "datetime" => {
-                parts.push(tmux_fmt::conf_style(
-                    &config.blocks.datetime.fg,
-                    &config.blocks.datetime.bg,
-                    false,
-                    &config.blocks.datetime.format,
-                ));
-            }
-            _ => {
-                parts.push(format!("{} {block} ", tmux_fmt::RESET));
-            }
-        }
-    }
-
-    parts.join("")
 }

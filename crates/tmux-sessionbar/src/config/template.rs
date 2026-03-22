@@ -146,8 +146,8 @@ pub struct SessionListBlock {
     pub button_fg: String,
     #[serde(default = "default_button_bg")]
     pub button_bg: String,
-    #[serde(default = "default_kill_bg")]
-    pub kill_bg: String,
+    #[serde(default = "default_kill_fg", alias = "kill_bg")]
+    pub kill_fg: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -227,7 +227,7 @@ fn default_history_limit() -> u32 { 5000 }
 fn default_clear_interval() -> u32 { 30 }
 fn default_button_fg() -> String { "#282c34".into() }
 fn default_button_bg() -> String { "#61afef".into() }
-fn default_kill_bg() -> String { "#e06c75".into() }
+fn default_kill_fg() -> String { "#e06c75".into() }
 fn default_label_fg() -> String { "#98c379".into() }
 fn default_clear_bg() -> String { "#e5c07b".into() }
 fn default_stats_fg() -> String { "#abb2bf".into() }
@@ -296,7 +296,7 @@ pub fn default_config() -> Config {
                 show_kill_button: true,
                 button_fg: default_button_fg(),
                 button_bg: default_button_bg(),
-                kill_bg: default_kill_bg(),
+                kill_fg: default_kill_fg(),
             },
             hostname: SimpleBlock::default(),
             datetime: DatetimeBlock::default(),
