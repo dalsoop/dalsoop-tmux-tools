@@ -1,5 +1,5 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/tmux-sessionbar", "crates/tmux-windowbar",
+    "crates/tmux-fmt", "crates/tmux-sessionbar", "crates/tmux-windowbar",
 ]

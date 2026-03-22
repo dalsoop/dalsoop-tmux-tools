@@ -9,6 +9,8 @@ keywords = ["tmux", "terminal", "session", "statusbar", "cli"]
 categories = ["command-line-utilities"]
 
 [dependencies]
+anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
+tmux-fmt = { path = "../tmux-fmt" }
 toml = "0.8"

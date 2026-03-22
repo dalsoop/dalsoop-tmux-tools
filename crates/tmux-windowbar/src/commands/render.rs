@@ -1,46 +1,45 @@
 use crate::config::template::load_config;
-use std::process::Command;
+use anyhow::Result;
+use tmux_fmt::tmux;
+use tmux_fmt::{click, label, Line};
 
 /// Renders current session's window list for status-format[0]
-pub fn render_windows() -> Result<String, Box<dyn std::error::Error>> {
+pub fn render_windows() -> Result<String> {
     let config = load_config()?;
     let w = &config.window;
 
-    let current = Command::new("tmux")
-        .args(["display-message", "-p", "#{window_index}"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
+    let current = tmux::query_or(&["display-message", "-p", "#{window_index}"], "");
 
-    let output = Command::new("tmux")
-        .args(["list-windows", "-F", "#{window_index}:#{window_name}"])
-        .output()?;
-    let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines = tmux::lines(&["list-windows", "-F", "#{window_index}:#{window_name}"])?;
 
     let mut parts = Vec::new();
-    for line in output_str.lines() {
-        if line.is_empty() {
-            continue;
-        }
+    for line in &lines {
         let (idx, name) = line.split_once(':').unwrap_or((line, ""));
 
         let block = if idx == current {
-            format!(
-                "#[range=user|_ws{idx}]#[fg={},bg={},bold] {idx}:{name} #[norange]#[default]",
-                w.active_fg, w.active_bg,
+            click(
+                &format!("_ws{idx}"),
+                &w.active_fg,
+                &w.active_bg,
+                true,
+                &format!(" {idx}:{name} "),
             )
         } else {
-            let mut b = format!(
-                "#[range=user|_ws{idx}]#[fg={},bg={}] {idx}:{name} #[norange]",
-                w.fg, w.bg,
+            let mut b = click(
+                &format!("_ws{idx}"),
+                &w.fg,
+                &w.bg,
+                false,
+                &format!(" {idx}:{name} "),
             );
             if w.show_kill_button {
-                b.push_str(&format!(
-                    "#[range=user|_wk{idx}]#[fg={},bg={}] x #[norange default]",
-                    w.kill_fg, w.kill_bg,
+                b.push_str(&click(
+                    &format!("_wk{idx}"),
+                    &w.kill_fg,
+                    &w.kill_bg,
+                    false,
+                    " x ",
                 ));
-            } else {
-                b.push_str("#[default]");
             }
             b
         };
@@ -52,8 +51,8 @@ pub fn render_windows() -> Result<String, Box<dyn std::error::Error>> {
 
     if w.show_new_button {
         result.push_str(&format!(
-            " #[range=user|_wnew_]#[fg={},bg={}] + #[norange default]",
-            w.button_fg, w.button_bg,
+            " {}",
+            click("_wnew_", &w.button_fg, &w.button_bg, false, " + ")
         ));
     }
 
@@ -62,50 +61,25 @@ pub fn render_windows() -> Result<String, Box<dyn std::error::Error>> {
 
 /// Get @view_user filter (empty = show all)
 fn get_view_user() -> String {
-    Command::new("tmux")
-        .args(["show", "-gv", "@view_user"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default()
+    tmux::query_or(&["show", "-gv", "@view_user"], "")
 }
 
 /// Renders all windows across all sessions in session.window format
-pub fn render_all_windows() -> Result<String, Box<dyn std::error::Error>> {
+pub fn render_all_windows() -> Result<String> {
     let config = load_config()?;
     let w = &config.window;
     let view_user = get_view_user();
 
-    // Get current session and window
-    let current_session = Command::new("tmux")
-        .args(["display-message", "-p", "#S"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
+    let current_session = tmux::query_or(&["display-message", "-p", "#S"], "");
+    let current_window = tmux::query_or(&["display-message", "-p", "#{window_index}"], "");
 
-    let current_window = Command::new("tmux")
-        .args(["display-message", "-p", "#{window_index}"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
-
-    // List all windows across all sessions
-    let output = Command::new("tmux")
-        .args([
-            "list-windows",
-            "-a",
-            "-F",
-            "#{session_name}:#{window_index}:#{window_name}",
-        ])
-        .output()?;
-    let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines = tmux::lines(&[
+        "list-windows", "-a", "-F",
+        "#{session_name}:#{window_index}:#{window_name}",
+    ])?;
 
     let mut parts = Vec::new();
-    for line in output_str.lines() {
-        if line.is_empty() {
-            continue;
-        }
+    for line in &lines {
         let mut split = line.splitn(3, ':');
         let sess = split.next().unwrap_or("");
 
@@ -122,22 +96,27 @@ pub fn render_all_windows() -> Result<String, Box<dyn std::error::Error>> {
         let name = split.next().unwrap_or("");
 
         let is_active = sess == current_session && idx == current_window;
-        // range id: _wa{session}.{index} (all-windows switch)
-        // Keep under 15 bytes
         let range_id = format!("_wa{sess}.{idx}");
 
         let block = if is_active {
-            format!(
-                "#[range=user|{range_id}]#[fg={},bg={},bold] {sess}.{idx}:{name} #[norange]#[default]",
-                w.active_fg, w.active_bg,
+            click(
+                &range_id,
+                &w.active_fg,
+                &w.active_bg,
+                true,
+                &format!(" {sess}.{idx}:{name} "),
             )
         } else {
             let kill_id = format!("_wx{sess}.{idx}");
-            format!(
-                "#[range=user|{range_id}]#[fg={},bg={}] {sess}.{idx}:{name} #[norange]\
-                 #[range=user|{kill_id}]#[fg={},bg={}] x #[norange default]",
-                w.fg, w.bg, w.kill_fg, w.kill_bg,
-            )
+            let mut b = click(
+                &range_id,
+                &w.fg,
+                &w.bg,
+                false,
+                &format!(" {sess}.{idx}:{name} "),
+            );
+            b.push_str(&click(&kill_id, &w.kill_fg, &w.kill_bg, false, " x "));
+            b
         };
 
         parts.push(block);
@@ -148,45 +127,22 @@ pub fn render_all_windows() -> Result<String, Box<dyn std::error::Error>> {
 
 
 /// Renders panes for status-format
-pub fn render_panes() -> Result<String, Box<dyn std::error::Error>> {
+pub fn render_panes() -> Result<String> {
     let config = load_config()?;
     let w = &config.window;
     let view_user = get_view_user();
 
-    let current_session = Command::new("tmux")
-        .args(["display-message", "-p", "#S"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
+    let current_session = tmux::query_or(&["display-message", "-p", "#S"], "");
+    let current_window = tmux::query_or(&["display-message", "-p", "#{window_index}"], "");
+    let current_pane = tmux::query_or(&["display-message", "-p", "#{pane_index}"], "");
 
-    let current_window = Command::new("tmux")
-        .args(["display-message", "-p", "#{window_index}"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
-
-    let current_pane = Command::new("tmux")
-        .args(["display-message", "-p", "#{pane_index}"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
-
-    // List all panes across all sessions
-    let output = Command::new("tmux")
-        .args([
-            "list-panes",
-            "-a",
-            "-F",
-            "#{session_name}:#{window_index}:#{pane_index}:#{pane_current_command}",
-        ])
-        .output()?;
-    let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines = tmux::lines(&[
+        "list-panes", "-a", "-F",
+        "#{session_name}:#{window_index}:#{pane_index}:#{pane_current_command}",
+    ])?;
 
     let mut parts = Vec::new();
-    for line in output_str.lines() {
-        if line.is_empty() {
-            continue;
-        }
+    for line in &lines {
         let mut split = line.splitn(4, ':');
         let sess = split.next().unwrap_or("");
         let win = split.next().unwrap_or("");
@@ -204,16 +160,13 @@ pub fn render_panes() -> Result<String, Box<dyn std::error::Error>> {
         }
 
         let is_active = sess == current_session && win == current_window && pane == current_pane;
-        // range id: _pp{s}.{w}.{p} — keep under 15 bytes
         let range_id = format!("_pp{sess}.{win}.{pane}");
+        let display = format!(" {sess}.{win}.{pane}:{cmd} ");
 
         let is_idle = matches!(cmd, "bash" | "zsh" | "fish" | "sh" | "dash" | "ksh" | "csh" | "tcsh");
 
         let block = if is_active {
-            format!(
-                "#[range=user|{range_id}]#[fg={},bg={},bold] {sess}.{win}.{pane}:{cmd} #[norange]#[default]",
-                w.active_fg, w.active_bg,
-            )
+            click(&range_id, &w.active_fg, &w.active_bg, true, &display)
         } else {
             let (fg, bg) = if let Some(c) = config.colors.get(cmd) {
                 (c.fg.clone(), c.bg.clone())
@@ -223,11 +176,9 @@ pub fn render_panes() -> Result<String, Box<dyn std::error::Error>> {
                 (w.running_fg.clone(), w.running_bg.clone())
             };
             let kill_id = format!("_px{sess}.{win}.{pane}");
-            format!(
-                "#[range=user|{range_id}]#[fg={fg},bg={bg}] {sess}.{win}.{pane}:{cmd} #[norange]\
-                 #[range=user|{kill_id}]#[fg={},bg={}] x #[norange default]",
-                w.kill_fg, w.kill_bg,
-            )
+            let mut b = click(&range_id, &fg, &bg, false, &display);
+            b.push_str(&click(&kill_id, &w.kill_fg, &w.kill_bg, false, " x "));
+            b
         };
 
         parts.push(block);
@@ -237,9 +188,9 @@ pub fn render_panes() -> Result<String, Box<dyn std::error::Error>> {
 
     // Split buttons
     result.push_str(&format!(
-        " #[range=user|_splith]#[fg={},bg={}] | #[norange default]\
-         #[range=user|_splitv]#[fg={},bg={}] - #[norange default]",
-        w.button_fg, w.button_bg, w.button_fg, w.button_bg,
+        " {}{}",
+        click("_splith", &w.button_fg, &w.button_bg, false, " | "),
+        click("_splitv", &w.button_fg, &w.button_bg, false, " - "),
     ));
 
     Ok(result)
@@ -247,13 +198,7 @@ pub fn render_panes() -> Result<String, Box<dyn std::error::Error>> {
 
 /// Get current view mode from tmux variable @view_mode
 fn get_view_mode() -> String {
-    Command::new("tmux")
-        .args(["show", "-gv", "@view_mode"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "all".into())
+    tmux::query_or(&["show", "-gv", "@view_mode"], "all")
 }
 
 /// Returns view switcher string for embedding in other lines
@@ -261,23 +206,19 @@ pub fn render_view_switcher() -> String {
     let mode = get_view_mode();
 
     let modes = [
-        ("_vAll", "🌐", "#98c379"),
-        ("_vUser", "👤", "#61afef"),
-        ("_vSession", "📋", "#c678dd"),
-        ("_vCompact", "⚡", "#e5c07b"),
+        ("_vAll", "\u{1f310}", "#98c379"),
+        ("_vUser", "\u{1f464}", "#61afef"),
+        ("_vSession", "\u{1f4cb}", "#c678dd"),
+        ("_vCompact", "\u{26a1}", "#e5c07b"),
     ];
 
     let mut parts = Vec::new();
     for (id, emoji, color) in &modes {
         let mode_name = id.strip_prefix("_v").unwrap_or(id).to_lowercase();
         if mode == mode_name {
-            parts.push(format!(
-                "#[range=user|{id}]#[fg=#282c34,bg={color},bold] {emoji} #[norange default]"
-            ));
+            parts.push(click(id, "#282c34", color, true, &format!(" {emoji} ")));
         } else {
-            parts.push(format!(
-                "#[range=user|{id}]#[fg=#abb2bf,bg=#3e4452] {emoji} #[norange default]"
-            ));
+            parts.push(click(id, "#abb2bf", "#3e4452", false, &format!(" {emoji} ")));
         }
     }
 
@@ -285,54 +226,49 @@ pub fn render_view_switcher() -> String {
 }
 
 
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run() -> Result<()> {
+    if !tmux::acquire_guard("windowbar_render", 100) {
+        return Ok(());
+    }
+
     let windows = render_windows()?;
     print!("{windows}");
 
-    // Always 5 lines, always same structure
-    // Line 0: Users
     render_line_users_at(0)?;
-    // Line 1: Sessions (set by sessionbar)
-    // Line 2: Windows (filtered by @view_user)
     render_line_windows_at(2)?;
-    // Line 3: Panes (filtered by @view_user)
     render_line_panes_at(3)?;
-    // Line 4: Apps
     render_line_apps_at(4)?;
-
-    Command::new("tmux")
-        .args(["set", "-g", "status", "5"])
-        .status()?;
 
     Ok(())
 }
 
-// Helpers that render to a specific status-format index
-fn render_line_users_at(idx: usize) -> Result<(), Box<dyn std::error::Error>> {
+fn render_line_users_at(idx: usize) -> Result<()> {
     render_line_users_impl(idx)
 }
 
-fn render_line_windows_at(idx: usize) -> Result<(), Box<dyn std::error::Error>> {
+fn render_line_windows_at(idx: usize) -> Result<()> {
     let all_windows = render_all_windows()?;
-    let label = "#[fg=#c678dd,bold]Windows #[default]";
-    let format = format!("#[align=left default]{label}{all_windows}");
-    Command::new("tmux")
-        .args(["set", "-g", &format!("status-format[{idx}]"), &format])
-        .status()?;
+    let format = Line::new()
+        .left()
+        .push(&label("Windows", "#c678dd"))
+        .push(&all_windows)
+        .build();
+    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
     Ok(())
 }
 
-fn render_line_panes_at(idx: usize) -> Result<(), Box<dyn std::error::Error>> {
+fn render_line_panes_at(idx: usize) -> Result<()> {
     let panes = render_panes()?;
-    let label = "#[fg=#e5c07b,bold]Panes #[default]";
-    let format = format!("#[align=left default]{label}{panes}");
-    Command::new("tmux")
-        .args(["set", "-g", &format!("status-format[{idx}]"), &format])
-        .status()?;
+    let format = Line::new()
+        .left()
+        .push(&label("Panes", "#e5c07b"))
+        .push(&panes)
+        .build();
+    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
     Ok(())
 }
 
-fn render_line_apps_at(idx: usize) -> Result<(), Box<dyn std::error::Error>> {
+fn render_line_apps_at(idx: usize) -> Result<()> {
     let config = load_config()?;
     if config.apps.is_empty() {
         return Ok(());
@@ -340,20 +276,24 @@ fn render_line_apps_at(idx: usize) -> Result<(), Box<dyn std::error::Error>> {
     let mut parts = Vec::new();
     for (i, app) in config.apps.iter().enumerate() {
         let range_id = format!("_app{i}");
-        parts.push(format!(
-            "#[range=user|{range_id}]#[fg={},bg={}] {} {} #[norange default]",
-            app.fg, app.bg, app.emoji, app.command,
+        parts.push(click(
+            &range_id,
+            &app.fg,
+            &app.bg,
+            false,
+            &format!(" {} {} ", app.emoji, app.command),
         ));
     }
-    let label = "#[fg=#e06c75,bold]Apps #[default]";
-    let format = format!("#[align=left default]{label}{}", parts.join(" "));
-    Command::new("tmux")
-        .args(["set", "-g", &format!("status-format[{idx}]"), &format])
-        .status()?;
+    let format = Line::new()
+        .left()
+        .push(&label("Apps", "#e06c75"))
+        .push(&parts.join(" "))
+        .build();
+    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
     Ok(())
 }
 
-fn render_line_users_impl(idx: usize) -> Result<(), Box<dyn std::error::Error>> {
+fn render_line_users_impl(idx: usize) -> Result<()> {
     let config = load_config()?;
     let w = &config.window;
     let view_user = get_view_user();
@@ -372,12 +312,8 @@ fn render_line_users_impl(idx: usize) -> Result<(), Box<dyn std::error::Error>> 
         if uid == 0 || uid >= 1000 { users.push(name); }
     }
 
-    let sessions_output = Command::new("tmux")
-        .args(["list-sessions", "-F", "#{session_name}"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+    let active_sessions = tmux::lines(&["list-sessions", "-F", "#{session_name}"])
         .unwrap_or_default();
-    let active_sessions: Vec<&str> = sessions_output.lines().collect();
 
     let mut parts = Vec::new();
     for user in &users {
@@ -388,32 +324,22 @@ fn render_line_users_impl(idx: usize) -> Result<(), Box<dyn std::error::Error>> 
         let is_viewed = !view_user.is_empty() && *user == view_user;
 
         let block = if is_viewed {
-            // Currently filtered/viewed user
-            format!(
-                "#[range=user|{range_id}]#[fg=#282c34,bg=#e5c07b,bold] 👤 {user} #[norange]#[default]",
-            )
+            click(&range_id, "#282c34", "#e5c07b", true, &format!(" 👤 {user} "))
         } else if *user == current_user {
-            format!(
-                "#[range=user|{range_id}]#[fg={},bg={},bold] 👤 {user} #[norange]#[default]",
-                w.active_fg, w.active_bg,
-            )
+            click(&range_id, &w.active_fg, &w.active_bg, true, &format!(" 👤 {user} "))
         } else if has_session {
-            format!(
-                "#[range=user|{range_id}]#[fg=#282c34,bg=#56b6c2] 👤 {user} #[norange]#[default]",
-            )
+            click(&range_id, "#282c34", "#56b6c2", false, &format!(" 👤 {user} "))
         } else {
-            format!(
-                "#[range=user|{range_id}]#[fg={},bg={}] 👤 {user} #[norange]#[default]",
-                w.fg, w.bg,
-            )
+            click(&range_id, &w.fg, &w.bg, false, &format!(" 👤 {user} "))
         };
         parts.push(block);
     }
 
-    let label = "#[fg=#56b6c2,bold]Users #[default]";
-    let format = format!("#[align=left default]{label}{}", parts.join(" "));
-    Command::new("tmux")
-        .args(["set", "-g", &format!("status-format[{idx}]"), &format])
-        .status()?;
+    let format = Line::new()
+        .left()
+        .push(&label("Users", "#56b6c2"))
+        .push(&parts.join(" "))
+        .build();
+    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
     Ok(())
 }

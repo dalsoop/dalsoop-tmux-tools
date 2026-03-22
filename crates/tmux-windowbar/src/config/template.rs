@@ -172,7 +172,7 @@ pub fn default_config() -> Config {
     }
 }
 
-pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+pub fn load_config() -> anyhow::Result<Config> {
     let path = config_path();
     if path.exists() {
         let content = std::fs::read_to_string(&path)?;

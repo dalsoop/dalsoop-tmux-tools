@@ -1,63 +1,45 @@
-use std::process::Command;
+use anyhow::Result;
+use tmux_fmt::tmux;
+use tmux_fmt::tmux::sanitize as sanitize_tmux;
 
 const CONFIRM_FILE: &str = "/tmp/tmux-pending-confirm.conf";
 
-pub fn run(range: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(range: &str) -> Result<()> {
     if range == "window" {
-        Command::new("tmux")
-            .args(["select-window"])
-            .status()?;
+        tmux::run(&["select-window"])?;
     } else if range == "_clear_" {
-        Command::new("tmux")
-            .args(["send-keys", "-R", ";", "clear-history"])
-            .status()?;
+        tmux::run(&["send-keys", "-R", ";", "clear-history"])?;
     } else if range == "_new_" {
-        Command::new("tmux")
-            .args(["new-session", "-d"])
-            .status()?;
+        tmux::run(&["new-session", "-d"])?;
     } else if let Some(sess) = range.strip_prefix("_k") {
         kill_session(sess)?;
     } else {
-        Command::new("tmux")
-            .args(["switch-client", "-t", &format!("={range}")])
-            .status()?;
+        tmux::run(&["switch-client", "-t", &format!("={range}")])?;
     }
 
     Ok(())
 }
 
-fn kill_session(sess: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let output = Command::new("tmux")
-        .args(["list-sessions", "-F", "#{session_name}"])
-        .output()?;
-    let output_str = String::from_utf8_lossy(&output.stdout).to_string();
-    let sessions: Vec<&str> = output_str
-        .lines()
-        .filter(|l| !l.is_empty())
-        .collect();
+fn kill_session(sess: &str) -> Result<()> {
+    let sessions = tmux::lines(&["list-sessions", "-F", "#{session_name}"])?;
 
     if sessions.len() <= 1 {
-        Command::new("tmux")
-            .args(["display-message", "cannot kill last session"])
-            .status()?;
+        tmux::run(&["display-message", "cannot kill last session"])?;
         return Ok(());
     }
 
-    let current = Command::new("tmux")
-        .args(["display-message", "-p", "#S"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
+    let current = tmux::query_or(&["display-message", "-p", "#S"], "");
 
+    let safe = sanitize_tmux(sess);
     let kill_cmd = if current == sess {
-        format!("switch-client -n ; kill-session -t ={sess}")
+        format!("switch-client -n ; kill-session -t ={safe}")
     } else {
-        format!("kill-session -t ={sess}")
+        format!("kill-session -t ={safe}")
     };
 
-    // Write confirm to file — binding will source it after run-shell exits
     let content = format!(
-        "confirm-before -p \"kill session '{sess}'? (y/n)\" \"{kill_cmd}\""
+        "confirm-before -p \"kill session '{}'? (y/n)\" \"{}\"",
+        safe, kill_cmd,
     );
     std::fs::write(CONFIRM_FILE, content)?;
 

@@ -1,21 +1,20 @@
+use anyhow::{bail, Result};
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
+use tmux_fmt::tmux;
 
 fn layout_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
     PathBuf::from(home).join(".config/tmux-windowbar/layouts")
 }
 
-pub fn save(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn save(name: &str) -> Result<()> {
     let dir = layout_dir();
     fs::create_dir_all(&dir)?;
 
-    // Save each window's layout string
-    let output = Command::new("tmux")
-        .args(["list-windows", "-F", "#{window_index}:#{window_name}:#{window_layout}"])
-        .output()?;
-    let content = String::from_utf8_lossy(&output.stdout).to_string();
+    let content = tmux::query(&[
+        "list-windows", "-F", "#{window_index}:#{window_name}:#{window_layout}",
+    ])?;
 
     let path = dir.join(format!("{name}.layout"));
     fs::write(&path, &content)?;
@@ -24,10 +23,10 @@ pub fn save(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn load(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn load(name: &str) -> Result<()> {
     let path = layout_dir().join(format!("{name}.layout"));
     if !path.exists() {
-        return Err(format!("layout '{name}' not found").into());
+        bail!("layout '{name}' not found");
     }
 
     let content = fs::read_to_string(&path)?;
@@ -42,25 +41,14 @@ pub fn load(name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let layout = parts.next().unwrap_or("");
 
         // Create window if it doesn't exist
-        let check = Command::new("tmux")
-            .args(["select-window", "-t", &format!(":{idx}")])
-            .status();
-        if !check.map(|s| s.success()).unwrap_or(false) {
-            Command::new("tmux")
-                .args(["new-window", "-t", &format!(":{idx}")])
-                .status()?;
+        if tmux::run(&["select-window", "-t", &format!(":{idx}")]).is_err() {
+            tmux::run(&["new-window", "-t", &format!(":{idx}")])?;
         }
 
-        // Rename window
-        Command::new("tmux")
-            .args(["rename-window", "-t", &format!(":{idx}"), win_name])
-            .status()?;
+        tmux::run(&["rename-window", "-t", &format!(":{idx}"), win_name])?;
 
-        // Apply layout
         if !layout.is_empty() {
-            Command::new("tmux")
-                .args(["select-layout", "-t", &format!(":{idx}"), layout])
-                .status()?;
+            tmux::run(&["select-layout", "-t", &format!(":{idx}"), layout])?;
         }
     }
 
@@ -68,7 +56,7 @@ pub fn load(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn list() -> Result<(), Box<dyn std::error::Error>> {
+pub fn list() -> Result<()> {
     let dir = layout_dir();
     if !dir.exists() {
         println!("no saved layouts");
