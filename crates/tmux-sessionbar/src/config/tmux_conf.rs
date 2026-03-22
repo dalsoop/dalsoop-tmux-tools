@@ -18,7 +18,7 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
     // Status bar global
     out.push_str("# --- Status bar ---\n");
     out.push_str(&format!("set -g status-interval {}\n", config.status.interval));
-    out.push_str("set -g status on\n");
+    out.push_str("set -g status 5\n");
     out.push_str(&format!("set -g status-position {}\n", config.status.position));
     out.push_str(&format!(
         "set -g status-style \"bg={},fg={}\"\n",
@@ -113,8 +113,8 @@ mod tests {
     fn status_is_enabled() {
         let out = make(&default_config());
         assert!(
-            out.contains("set -g status on\n"),
-            "should set status to on"
+            out.contains("set -g status 5\n"),
+            "should set status to 5 lines"
         );
     }
 
