@@ -180,6 +180,7 @@ pub fn default_config() -> Config {
     colors.insert("python3".into(), ColorEntry { fg: "#282c34".into(), bg: "#e5c07b".into() });
     colors.insert("htop".into(), ColorEntry { fg: "#282c34".into(), bg: "#d19a66".into() });
     colors.insert("codex".into(), ColorEntry { fg: "#282c34".into(), bg: "#98c379".into() });
+    colors.insert("veilkey".into(), ColorEntry { fg: "#282c34".into(), bg: "#98c379".into() });
 
     let apps = vec![
         AppEntry {
@@ -211,10 +212,10 @@ pub fn default_config() -> Config {
             mode: "window".into(),
         },
         AppEntry {
-            emoji: "🐍".into(),
-            command: "python3".into(),
+            emoji: "🔑".into(),
+            command: "veilkey".into(),
             fg: "#282c34".into(),
-            bg: "#e5c07b".into(),
+            bg: "#98c379".into(),
             mode: "window".into(),
         },
         AppEntry {
