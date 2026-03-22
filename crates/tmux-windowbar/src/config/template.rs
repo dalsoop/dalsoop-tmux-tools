@@ -36,6 +36,7 @@ pub struct Config {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ThemeConfig {
+    // Line labels
     #[serde(default = "default_users_label")]
     pub users_label: String,
     #[serde(default = "default_windows_label")]
@@ -44,12 +45,22 @@ pub struct ThemeConfig {
     pub panes_label: String,
     #[serde(default = "default_apps_label")]
     pub apps_label: String,
+    // View switcher button colors
+    #[serde(default = "default_view_all")]
+    pub view_all: String,
+    #[serde(default = "default_view_user")]
+    pub view_user: String,
+    #[serde(default = "default_view_session")]
+    pub view_session: String,
+    #[serde(default = "default_view_compact")]
+    pub view_compact: String,
     #[serde(default = "default_view_active_fg")]
     pub view_active_fg: String,
     #[serde(default = "default_view_inactive_fg")]
     pub view_inactive_fg: String,
     #[serde(default = "default_view_inactive_bg")]
     pub view_inactive_bg: String,
+    // User states
     #[serde(default = "default_user_viewed_fg")]
     pub user_viewed_fg: String,
     #[serde(default = "default_user_viewed_bg")]
@@ -67,6 +78,10 @@ impl Default for ThemeConfig {
             windows_label: default_windows_label(),
             panes_label: default_panes_label(),
             apps_label: default_apps_label(),
+            view_all: default_view_all(),
+            view_user: default_view_user(),
+            view_session: default_view_session(),
+            view_compact: default_view_compact(),
             view_active_fg: default_view_active_fg(),
             view_inactive_fg: default_view_inactive_fg(),
             view_inactive_bg: default_view_inactive_bg(),
@@ -130,6 +145,10 @@ fn default_users_label() -> String { "#56b6c2".into() }
 fn default_windows_label() -> String { "#c678dd".into() }
 fn default_panes_label() -> String { "#e5c07b".into() }
 fn default_apps_label() -> String { "#e06c75".into() }
+fn default_view_all() -> String { "#98c379".into() }
+fn default_view_user() -> String { "#61afef".into() }
+fn default_view_session() -> String { "#c678dd".into() }
+fn default_view_compact() -> String { "#e5c07b".into() }
 fn default_view_active_fg() -> String { "#282c34".into() }
 fn default_view_inactive_fg() -> String { "#abb2bf".into() }
 fn default_view_inactive_bg() -> String { "#3e4452".into() }
