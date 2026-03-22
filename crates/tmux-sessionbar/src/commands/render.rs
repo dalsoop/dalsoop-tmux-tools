@@ -44,7 +44,7 @@ fn render_left() -> Result<()> {
         if sl.show_kill_button && *name != current {
             block.push_str(&click(
                 &format!("_k{name}"),
-                &sl.kill_bg,
+                &sl.kill_fg,
                 &config.status.bg,
                 false,
                 " x ",
