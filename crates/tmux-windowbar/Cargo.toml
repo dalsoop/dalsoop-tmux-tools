@@ -7,6 +7,8 @@ license = "MIT"
 repository = "https://github.com/dalsoop/dalsoop-tmux-tools"
 
 [dependencies]
+anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
+tmux-fmt = { path = "../tmux-fmt" }
 toml = "0.8"

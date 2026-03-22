@@ -1,5 +1,6 @@
 use crate::config::template;
 use crate::config::tmux_conf;
+use anyhow::{bail, Context, Result};
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -9,21 +10,21 @@ use std::process::Command;
 const CLEAR_HISTORY_SCRIPT: &str = "/usr/local/bin/tmux-clear-history";
 const CLEAR_HISTORY_MARKER: &str = "tmux-clear-history";
 
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run() -> Result<()> {
     let home = home_dir();
     let tmux_conf_path = home.join(".tmux.conf");
     let config_path = template::config_path();
 
     if !config_path.exists() {
-        return Err(format!(
+        bail!(
             "config not found: {}\nrun `tmux-sessionbar init` first.",
             config_path.display()
-        )
-        .into());
+        );
     }
 
     let config = template::load_config()?;
-    let binary_path = std::env::current_exe()?
+    let binary_path = std::env::current_exe()
+        .context("failed to get current exe path")?
         .to_string_lossy()
         .to_string();
 
@@ -38,9 +39,6 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     match reload {
         Ok(s) if s.success() => {
             println!("tmux config reloaded");
-
-            // Re-apply windowbar settings (mouse click bindings, hooks)
-            // These are runtime-only and not persisted in .tmux.conf
             let _ = Command::new("tmux-windowbar")
                 .args(["apply"])
                 .status();
@@ -48,15 +46,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         _ => println!("tmux not running — config will apply on next start"),
     }
 
-    // Maintenance: periodic scrollback clear via cron
     setup_maintenance(&config)?;
 
     Ok(())
 }
 
-fn setup_maintenance(config: &template::Config) -> Result<(), Box<dyn std::error::Error>> {
+fn setup_maintenance(config: &template::Config) -> Result<()> {
     if config.maintenance.auto_clear {
-        // Write the clear-history helper script
         let script = "#!/bin/bash\n\
             tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null | while read pane; do\n\
             \ttmux clear-history -t \"$pane\" 2>/dev/null\n\
@@ -67,14 +63,12 @@ fn setup_maintenance(config: &template::Config) -> Result<(), Box<dyn std::error
         fs::set_permissions(CLEAR_HISTORY_SCRIPT, fs::Permissions::from_mode(0o755))?;
         println!("installed: {}", CLEAR_HISTORY_SCRIPT);
 
-        // Install cron entry
         let existing = Command::new("crontab")
             .arg("-l")
             .output()
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
             .unwrap_or_default();
 
-        // Filter out old tmux-clear-history entries
         let filtered: Vec<&str> = existing
             .lines()
             .filter(|line| !line.contains(CLEAR_HISTORY_MARKER))
@@ -95,7 +89,8 @@ fn setup_maintenance(config: &template::Config) -> Result<(), Box<dyn std::error
         let mut child = Command::new("crontab")
             .arg("-")
             .stdin(std::process::Stdio::piped())
-            .spawn()?;
+            .spawn()
+            .context("failed to run crontab")?;
 
         if let Some(ref mut stdin) = child.stdin {
             stdin.write_all(new_crontab.as_bytes())?;
@@ -107,10 +102,8 @@ fn setup_maintenance(config: &template::Config) -> Result<(), Box<dyn std::error
             config.maintenance.clear_interval, CLEAR_HISTORY_SCRIPT
         );
     } else {
-        // Remove cron entry if auto_clear is disabled
         remove_cron_entry()?;
 
-        // Remove script if it exists
         if std::path::Path::new(CLEAR_HISTORY_SCRIPT).exists() {
             fs::remove_file(CLEAR_HISTORY_SCRIPT)?;
             println!("removed: {}", CLEAR_HISTORY_SCRIPT);
@@ -120,7 +113,7 @@ fn setup_maintenance(config: &template::Config) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-fn remove_cron_entry() -> Result<(), Box<dyn std::error::Error>> {
+fn remove_cron_entry() -> Result<()> {
     let existing = Command::new("crontab")
         .arg("-l")
         .output()
@@ -138,7 +131,8 @@ fn remove_cron_entry() -> Result<(), Box<dyn std::error::Error>> {
         let mut child = Command::new("crontab")
             .arg("-")
             .stdin(std::process::Stdio::piped())
-            .spawn()?;
+            .spawn()
+            .context("failed to run crontab")?;
 
         if let Some(ref mut stdin) = child.stdin {
             stdin.write_all(new_crontab.as_bytes())?;

@@ -1,15 +1,16 @@
 use crate::config::template;
+use anyhow::{bail, Context, Result};
 use std::process::Command;
+use tmux_fmt::tmux;
 
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run() -> Result<()> {
     let config_path = template::config_path();
 
     if !config_path.exists() {
-        return Err(format!(
+        bail!(
             "config not found: {}\nrun `tmux-windowbar init` first.",
             config_path.display()
-        )
-        .into());
+        );
     }
 
     apply_settings()?;
@@ -17,8 +18,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn apply_settings() -> Result<(), Box<dyn std::error::Error>> {
-    let binary_path = std::env::current_exe()?
+pub fn apply_settings() -> Result<()> {
+    let binary_path = std::env::current_exe()
+        .context("failed to get current exe path")?
         .to_string_lossy()
         .to_string();
 
@@ -31,19 +33,16 @@ rm -f /tmp/tmux-pending-confirm.conf
     std::fs::write("/usr/local/bin/tmux-click-handler", &script)?;
     Command::new("chmod").args(["+x", "/usr/local/bin/tmux-click-handler"]).status()?;
 
-    // Mouse binding: run click handler, then check for pending confirm file
-    // if-shell checks if the file exists, if so source-file runs confirm-before in tmux context
-    Command::new("tmux").args([
+    tmux::run(&[
         "bind", "-Troot", "MouseDown1Status",
         "if-shell -F '1' \
             \"run-shell '/usr/local/bin/tmux-click-handler \\\"#{mouse_status_range}\\\"'\" ; \
          if-shell 'test -f /tmp/tmux-pending-confirm.conf' \
             'source-file /tmp/tmux-pending-confirm.conf ; run-shell \"rm -f /tmp/tmux-pending-confirm.conf\"'"
-    ]).status()?;
+    ])?;
 
     // Double-click: rename session/window via command-prompt
-    // Writes rename command to tmp file, then sources it
-    let dblclick_script = format!(r#"#!/bin/bash
+    let dblclick_script = r#"#!/bin/bash
 RANGE="$1"
 rm -f /tmp/tmux-pending-rename.conf
 # Session rename (non-prefixed range = session name)
@@ -59,17 +58,17 @@ elif echo "$RANGE" | grep -qE '^_wa'; then
     WIN=$(echo "$TARGET" | cut -d. -f2)
     echo "command-prompt -p \"rename window $SESS:$WIN:\" \"rename-window -t =$SESS:$WIN '%%'\"" > /tmp/tmux-pending-rename.conf
 fi
-"#);
-    std::fs::write("/usr/local/bin/tmux-dblclick-handler", &dblclick_script)?;
+"#;
+    std::fs::write("/usr/local/bin/tmux-dblclick-handler", dblclick_script)?;
     Command::new("chmod").args(["+x", "/usr/local/bin/tmux-dblclick-handler"]).status()?;
 
-    Command::new("tmux").args([
+    tmux::run(&[
         "bind", "-Troot", "DoubleClick1Status",
         "if-shell -F '1' \
             \"run-shell '/usr/local/bin/tmux-dblclick-handler \\\"#{mouse_status_range}\\\"'\" ; \
          if-shell 'test -f /tmp/tmux-pending-rename.conf' \
             'source-file /tmp/tmux-pending-rename.conf ; run-shell \"rm -f /tmp/tmux-pending-rename.conf\"'"
-    ]).status()?;
+    ])?;
 
     // Trigger sessionbar re-render
     let _ = Command::new("tmux-sessionbar")
@@ -77,18 +76,14 @@ fi
         .status();
 
     // Hooks
-    let hook_cmd = "run-shell -b 'tmux-sessionbar render-status left'".to_string();
+    let hook_cmd = "run-shell -b 'tmux-sessionbar render-status left'";
     for hook in &[
         "window-linked", "window-unlinked", "window-renamed",
         "after-select-window", "after-new-window", "after-select-pane", "after-split-window",
     ] {
-        Command::new("tmux")
-            .args(["set-hook", "-g", hook, &hook_cmd])
-            .status()?;
+        tmux::run(&["set-hook", "-g", hook, hook_cmd])?;
     }
-    Command::new("tmux")
-        .args(["set-hook", "-ga", "client-session-changed", &hook_cmd])
-        .status()?;
+    tmux::run(&["set-hook", "-ga", "client-session-changed", hook_cmd])?;
 
     Ok(())
 }

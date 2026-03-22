@@ -1,10 +1,11 @@
 use crate::config::template::{self, default_config};
 use crate::config::tmux_conf;
+use anyhow::{Context, Result};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run() -> Result<()> {
     let home = home_dir();
     let tmux_conf_path = home.join(".tmux.conf");
     let config_dir = template::config_dir();
@@ -41,7 +42,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Generate .tmux.conf
     let config = template::load_config()?;
-    let binary_path = std::env::current_exe()?
+    let binary_path = std::env::current_exe()
+        .context("failed to get current exe path")?
         .to_string_lossy()
         .to_string();
     let conf_content = tmux_conf::generate(&config, &binary_path);
@@ -58,7 +60,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "https://github.com/tmux-plugins/tpm",
                 &tpm_dir.to_string_lossy(),
             ])
-            .output()?;
+            .output()
+            .context("failed to run git clone for TPM")?;
         if output.status.success() {
             println!("[4/7] TPM installed");
         } else {
@@ -73,7 +76,6 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(&wb_config_dir)?;
     let wb_config_path = wb_config_dir.join("config.toml");
     if !wb_config_path.exists() {
-        // Run windowbar init if binary exists
         let wb_result = Command::new("tmux-windowbar")
             .args(["init"])
             .output();
@@ -93,7 +95,6 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     match reload {
         Ok(s) if s.success() => {
             println!("[6/7] tmux config reloaded");
-            // Apply windowbar (mouse bindings, hooks, render)
             let _ = Command::new("tmux-windowbar")
                 .args(["apply"])
                 .status();
@@ -105,7 +106,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let tpm_install = home.join(".tmux/plugins/tpm/bin/install_plugins");
     if tpm_install.exists() {
         println!("[7/7] installing plugins...");
-        let output = Command::new(&tpm_install).output()?;
+        let output = Command::new(&tpm_install)
+            .output()
+            .context("failed to run TPM install_plugins")?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut count = 0;
         for line in stdout.lines() {
@@ -135,14 +138,12 @@ fn home_dir() -> PathBuf {
 }
 
 fn ensure_tmux_tmpdir() {
-    // Ensure tmux socket directory exists (needed in LXC containers)
     let uid = Command::new("id").args(["-u"]).output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|_| "0".into());
     let dir = format!("/tmp/tmux-{uid}");
     if !std::path::Path::new(&dir).exists() {
         let _ = fs::create_dir_all(&dir);
-        // Set 700 permissions
         let _ = Command::new("chmod").args(["700", &dir]).status();
     }
 }
@@ -151,9 +152,7 @@ fn ensure_in_path(name: &str) {
     let local_bin = format!("/usr/local/bin/{name}");
     let usr_bin = format!("/usr/bin/{name}");
 
-    // If binary exists in /usr/local/bin but not reachable via PATH
     if std::path::Path::new(&local_bin).exists() && !std::path::Path::new(&usr_bin).exists() {
-        // Check if /usr/local/bin is in PATH
         let path = std::env::var("PATH").unwrap_or_default();
         if !path.contains("/usr/local/bin") {
             let _ = std::os::unix::fs::symlink(&local_bin, &usr_bin);

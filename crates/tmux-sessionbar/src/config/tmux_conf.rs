@@ -18,7 +18,7 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
     // Status bar global
     out.push_str("# --- Status bar ---\n");
     out.push_str(&format!("set -g status-interval {}\n", config.status.interval));
-    out.push_str("set -g status 5\n");
+    out.push_str("set -g status on\n");
     out.push_str(&format!("set -g status-position {}\n", config.status.position));
     out.push_str(&format!(
         "set -g status-style \"bg={},fg={}\"\n",
@@ -44,12 +44,12 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
     // Window status
     out.push_str("# --- Window status ---\n");
     out.push_str(&format!(
-        "setw -g window-status-format \"#[fg={},bg={}] #I:#W \"\n",
-        config.status.fg, config.status.bg
+        "setw -g window-status-format \"{}\"\n",
+        tmux_fmt::conf_style(&config.status.fg, &config.status.bg, false, " #I:#W ")
     ));
     out.push_str(&format!(
-        "setw -g window-status-current-format \"#[fg={},bg={},bold] #I:#W \"\n",
-        config.blocks.session_list.active_fg, config.blocks.session_list.active_bg
+        "setw -g window-status-current-format \"{}\"\n",
+        tmux_fmt::conf_style(&config.blocks.session_list.active_fg, &config.blocks.session_list.active_bg, true, " #I:#W ")
     ));
     out.push('\n');
 
@@ -66,8 +66,9 @@ pub fn generate(config: &Config, binary_path: &str) -> String {
         out.push_str("bind -n M-k send-keys -R \\; clear-history\n\n");
     }
 
-    // Mouse click binding is managed by tmux-windowbar apply
-    // (includes click-handler chain + confirm-before support)
+    // Mouse click binding + windowbar hooks
+    out.push_str("# --- Mouse click + windowbar hooks ---\n");
+    out.push_str("run-shell -b '/usr/local/bin/tmux-windowbar apply'\n\n");
 
     // Hooks: update session list on session events
     out.push_str("# --- Hooks: update session list dynamically ---\n");
@@ -109,15 +110,11 @@ mod tests {
     }
 
     #[test]
-    fn status_uses_multiline_mode() {
+    fn status_is_enabled() {
         let out = make(&default_config());
         assert!(
-            out.contains("set -g status 5\n"),
-            "should set status to 5-line mode, not 'on'"
-        );
-        assert!(
-            !out.contains("set -g status on"),
-            "must not contain 'set -g status on'"
+            out.contains("set -g status on\n"),
+            "should set status to on"
         );
     }
 
@@ -249,23 +246,23 @@ fn render_right_segment(blocks: &[String], config: &Config) -> String {
     for block in blocks {
         match block.as_str() {
             "hostname" => {
-                parts.push(format!(
-                    "#[fg={},bg={}]{}",
-                    config.blocks.hostname.fg,
-                    config.blocks.hostname.bg,
-                    config.blocks.hostname.format
+                parts.push(tmux_fmt::conf_style(
+                    &config.blocks.hostname.fg,
+                    &config.blocks.hostname.bg,
+                    false,
+                    &config.blocks.hostname.format,
                 ));
             }
             "datetime" => {
-                parts.push(format!(
-                    "#[fg={},bg={}]{}",
-                    config.blocks.datetime.fg,
-                    config.blocks.datetime.bg,
-                    config.blocks.datetime.format
+                parts.push(tmux_fmt::conf_style(
+                    &config.blocks.datetime.fg,
+                    &config.blocks.datetime.bg,
+                    false,
+                    &config.blocks.datetime.format,
                 ));
             }
             _ => {
-                parts.push(format!("#[default] {block} "));
+                parts.push(format!("{} {block} ", tmux_fmt::RESET));
             }
         }
     }

@@ -1,13 +1,12 @@
 use crate::config::template;
+use anyhow::Result;
 use std::path::PathBuf;
-use std::process::Command;
 
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run() -> Result<()> {
     let home = home_dir();
     let tmux_conf_path = home.join(".tmux.conf");
     let config_path = template::config_path();
 
-    // Config state
     println!("=== tmux-sessionbar status ===\n");
 
     if config_path.exists() {
@@ -27,28 +26,19 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!(".tmux.conf: not found");
     }
 
-    // Binary path
     if let Ok(exe) = std::env::current_exe() {
         println!("binary: {}", exe.display());
     }
 
-    // tmux sessions
     println!();
-    let output = Command::new("tmux")
-        .args(["list-sessions"])
-        .output();
-
-    match output {
-        Ok(o) if o.status.success() => {
-            let sessions = String::from_utf8_lossy(&o.stdout);
+    match tmux_fmt::tmux::query(&["list-sessions"]) {
+        Ok(sessions) => {
             println!("sessions:");
             for line in sessions.lines() {
                 println!("  {line}");
             }
         }
-        _ => {
-            println!("tmux: not running");
-        }
+        Err(_) => println!("tmux: not running"),
     }
 
     Ok(())
