@@ -19,6 +19,14 @@ pub fn run() -> Result<()> {
 }
 
 pub fn apply_settings() -> Result<()> {
+    // Backfill new fields (e.g. [theme]) into existing config
+    let config_path = crate::config::template::config_path();
+    if config_path.exists() {
+        let config = crate::config::template::load_config()?;
+        let updated = toml::to_string_pretty(&config)?;
+        std::fs::write(&config_path, &updated)?;
+    }
+
     let binary_path = std::env::current_exe()
         .context("failed to get current exe path")?
         .to_string_lossy()
