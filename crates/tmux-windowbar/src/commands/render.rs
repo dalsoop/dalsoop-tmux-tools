@@ -1,11 +1,10 @@
-use crate::config::template::load_config;
+use crate::config::template::{load_config, Config};
 use anyhow::Result;
 use tmux_fmt::tmux;
 use tmux_fmt::{click, label, Line};
 
 /// Renders current session's window list for status-format[0]
-pub fn render_windows() -> Result<String> {
-    let config = load_config()?;
+fn render_windows(config: &Config) -> Result<String> {
     let w = &config.window;
 
     let current = tmux::query_or(&["display-message", "-p", "#{window_index}"], "");
@@ -65,8 +64,7 @@ fn get_view_user() -> String {
 }
 
 /// Renders all windows across all sessions in session.window format
-pub fn render_all_windows() -> Result<String> {
-    let config = load_config()?;
+fn render_all_windows(config: &Config) -> Result<String> {
     let w = &config.window;
     let view_user = get_view_user();
 
@@ -83,7 +81,6 @@ pub fn render_all_windows() -> Result<String> {
         let mut split = line.splitn(3, ':');
         let sess = split.next().unwrap_or("");
 
-        // Filter by user if set
         if !view_user.is_empty() {
             let is_user_session = sess == view_user;
             let is_unowned = !sess.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false);
@@ -127,8 +124,7 @@ pub fn render_all_windows() -> Result<String> {
 
 
 /// Renders panes for status-format
-pub fn render_panes() -> Result<String> {
-    let config = load_config()?;
+fn render_panes(config: &Config) -> Result<String> {
     let w = &config.window;
     let view_user = get_view_user();
 
@@ -149,7 +145,6 @@ pub fn render_panes() -> Result<String> {
         let pane = split.next().unwrap_or("");
         let cmd = split.next().unwrap_or("");
 
-        // Filter by user if set
         if !view_user.is_empty() {
             let is_user_session = sess == view_user;
             let is_unowned = !sess.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false);
@@ -208,10 +203,10 @@ pub fn render_view_switcher() -> String {
     let mode = get_view_mode();
 
     let modes = [
-        ("_vAll", "\u{1f310}", &th.users_label),
-        ("_vUser", "\u{1f464}", &th.windows_label),
-        ("_vSession", "\u{1f4cb}", &th.panes_label),
-        ("_vCompact", "\u{26a1}", &th.apps_label),
+        ("_vAll", "\u{1f310}", &th.view_all),
+        ("_vUser", "\u{1f464}", &th.view_user),
+        ("_vSession", "\u{1f4cb}", &th.view_session),
+        ("_vCompact", "\u{26a1}", &th.view_compact),
     ];
 
     let mut parts = Vec::new();
@@ -233,72 +228,20 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    let windows = render_windows()?;
+    let config = load_config()?;
+
+    let windows = render_windows(&config)?;
     print!("{windows}");
 
-    render_line_users_at(0)?;
-    render_line_windows_at(2)?;
-    render_line_panes_at(3)?;
-    render_line_apps_at(4)?;
+    render_line_users(&config, 0)?;
+    render_line_windows(&config, 2)?;
+    render_line_panes(&config, 3)?;
+    render_line_apps(&config, 4)?;
 
     Ok(())
 }
 
-fn render_line_users_at(idx: usize) -> Result<()> {
-    render_line_users_impl(idx)
-}
-
-fn render_line_windows_at(idx: usize) -> Result<()> {
-    let config = load_config()?;
-    let all_windows = render_all_windows()?;
-    let format = Line::new()
-        .left()
-        .push(&label("Windows", &config.theme.windows_label))
-        .push(&all_windows)
-        .build();
-    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
-    Ok(())
-}
-
-fn render_line_panes_at(idx: usize) -> Result<()> {
-    let config = load_config()?;
-    let panes = render_panes()?;
-    let format = Line::new()
-        .left()
-        .push(&label("Panes", &config.theme.panes_label))
-        .push(&panes)
-        .build();
-    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
-    Ok(())
-}
-
-fn render_line_apps_at(idx: usize) -> Result<()> {
-    let config = load_config()?;
-    if config.apps.is_empty() {
-        return Ok(());
-    }
-    let mut parts = Vec::new();
-    for (i, app) in config.apps.iter().enumerate() {
-        let range_id = format!("_app{i}");
-        parts.push(click(
-            &range_id,
-            &app.fg,
-            &app.bg,
-            false,
-            &format!(" {} {} ", app.emoji, app.command),
-        ));
-    }
-    let format = Line::new()
-        .left()
-        .push(&label("Apps", &config.theme.apps_label))
-        .push(&parts.join(" "))
-        .build();
-    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
-    Ok(())
-}
-
-fn render_line_users_impl(idx: usize) -> Result<()> {
-    let config = load_config()?;
+fn render_line_users(config: &Config, idx: usize) -> Result<()> {
     let w = &config.window;
     let th = &config.theme;
     let view_user = get_view_user();
@@ -343,6 +286,52 @@ fn render_line_users_impl(idx: usize) -> Result<()> {
     let format = Line::new()
         .left()
         .push(&label("Users", &th.users_label))
+        .push(&parts.join(" "))
+        .build();
+    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
+    Ok(())
+}
+
+fn render_line_windows(config: &Config, idx: usize) -> Result<()> {
+    let all_windows = render_all_windows(config)?;
+    let format = Line::new()
+        .left()
+        .push(&label("Windows", &config.theme.windows_label))
+        .push(&all_windows)
+        .build();
+    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
+    Ok(())
+}
+
+fn render_line_panes(config: &Config, idx: usize) -> Result<()> {
+    let panes = render_panes(config)?;
+    let format = Line::new()
+        .left()
+        .push(&label("Panes", &config.theme.panes_label))
+        .push(&panes)
+        .build();
+    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
+    Ok(())
+}
+
+fn render_line_apps(config: &Config, idx: usize) -> Result<()> {
+    if config.apps.is_empty() {
+        return Ok(());
+    }
+    let mut parts = Vec::new();
+    for (i, app) in config.apps.iter().enumerate() {
+        let range_id = format!("_app{i}");
+        parts.push(click(
+            &range_id,
+            &app.fg,
+            &app.bg,
+            false,
+            &format!(" {} {} ", app.emoji, app.command),
+        ));
+    }
+    let format = Line::new()
+        .left()
+        .push(&label("Apps", &config.theme.apps_label))
         .push(&parts.join(" "))
         .build();
     tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
