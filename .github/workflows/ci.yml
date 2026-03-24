@@ -58,6 +58,10 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      # NOTE: This duplicates the `cargo build --release` from build-and-test.
+      # The shared cargo cache key means incremental compilation avoids a full
+      # rebuild in practice, but a cleaner approach would be to upload the
+      # compiled binaries as artifacts in build-and-test and download them here.
       - name: Build
         run: cargo build --release
 

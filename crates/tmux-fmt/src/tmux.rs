@@ -86,10 +86,15 @@ pub fn lines(args: &[&str]) -> Result<Vec<String>> {
 ///
 /// Removes characters that could break tmux command parsing or enable
 /// command injection: quotes, backslashes, semicolons, `#`, backticks,
-/// `$`, newlines, and null bytes.
+/// `$`, curly braces, newlines, and null bytes.
+///
+/// Curly braces are filtered because tmux interprets `#{...}` as format
+/// strings; user input containing `{` or `}` could be interpreted as a
+/// tmux format expression (e.g. `#{shell-command:...}`) if passed to a
+/// tmux command without sanitization.
 pub fn sanitize(s: &str) -> String {
     s.chars()
-        .filter(|c| !matches!(c, '\'' | '"' | '\\' | ';' | '#' | '`' | '$' | '\n' | '\r' | '\0'))
+        .filter(|c| !matches!(c, '\'' | '"' | '\\' | ';' | '#' | '`' | '$' | '{' | '}' | '\n' | '\r' | '\0'))
         .collect()
 }
 
@@ -148,6 +153,8 @@ mod tests {
         assert_eq!(sanitize("a#b"), "ab");
         assert_eq!(sanitize("a`whoami`"), "awhoami");
         assert_eq!(sanitize("a$(cmd)"), "a(cmd)");
+        assert_eq!(sanitize("#{shell-command:ls}"), "shell-command:ls");
+        assert_eq!(sanitize("a{b}c"), "abc");
         assert_eq!(sanitize("a\nb"), "ab");
         assert_eq!(sanitize("a\rb"), "ab");
         assert_eq!(sanitize("a\0b"), "ab");
