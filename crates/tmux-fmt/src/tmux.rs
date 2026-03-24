@@ -22,12 +22,24 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+/// Build a `Command` for tmux, respecting `TMUX_SOCKET` env var.
+/// If `TMUX_SOCKET` is set, prepends `-L <socket>` to use an isolated server.
+fn tmux_cmd(args: &[&str]) -> Command {
+    let mut cmd = Command::new("tmux");
+    if let Ok(socket) = std::env::var("TMUX_SOCKET") {
+        if !socket.is_empty() {
+            cmd.args(["-L", &socket]);
+        }
+    }
+    cmd.args(args);
+    cmd
+}
+
 /// Run a tmux command and return trimmed stdout.
 ///
 /// Fails if tmux is not found or exits with an error.
 pub fn query(args: &[&str]) -> Result<String> {
-    let output = Command::new("tmux")
-        .args(args)
+    let output = tmux_cmd(args)
         .output()
         .with_context(|| format!("tmux {}", args.join(" ")))?;
 
@@ -46,8 +58,7 @@ pub fn query_or(args: &[&str], fallback: &str) -> String {
 
 /// Run a tmux command, only checking for success.
 pub fn run(args: &[&str]) -> Result<()> {
-    let status = Command::new("tmux")
-        .args(args)
+    let status = tmux_cmd(args)
         .status()
         .with_context(|| format!("tmux {}", args.join(" ")))?;
 
@@ -60,7 +71,7 @@ pub fn run(args: &[&str]) -> Result<()> {
 
 /// Run a tmux command, ignoring any failure.
 pub fn run_quiet(args: &[&str]) {
-    let _ = Command::new("tmux").args(args).status();
+    let _ = tmux_cmd(args).status();
 }
 
 /// Run a tmux command and return the full output (stdout lines).
