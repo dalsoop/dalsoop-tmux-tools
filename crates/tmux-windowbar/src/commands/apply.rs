@@ -33,25 +33,31 @@ pub fn apply_settings() -> Result<()> {
         .to_string();
 
     // Write click handler script
+    // Runs click logic, then sources confirm/rename files directly to avoid race condition
     let script = format!(r#"#!/bin/bash
 RANGE="$1"
+TMUX_OPTS=""
+[ -n "$TMUX_SOCKET" ] && TMUX_OPTS="-L $TMUX_SOCKET"
 rm -f /tmp/tmux-pending-confirm.conf
 {binary_path} click "$RANGE" 2>/dev/null || tmux-sessionbar click "$RANGE" 2>/dev/null
+if [ -f /tmp/tmux-pending-confirm.conf ]; then
+    tmux $TMUX_OPTS source-file /tmp/tmux-pending-confirm.conf
+    rm -f /tmp/tmux-pending-confirm.conf
+fi
 "#);
     std::fs::write("/usr/local/bin/tmux-click-handler", &script)?;
     Command::new("chmod").args(["+x", "/usr/local/bin/tmux-click-handler"]).status()?;
 
     tmux::run(&[
         "bind", "-Troot", "MouseDown1Status",
-        "if-shell -F '1' \
-            \"run-shell '/usr/local/bin/tmux-click-handler \\\"#{mouse_status_range}\\\"'\" ; \
-         if-shell 'test -f /tmp/tmux-pending-confirm.conf' \
-            'source-file /tmp/tmux-pending-confirm.conf ; run-shell \"rm -f /tmp/tmux-pending-confirm.conf\"'"
+        "run-shell '/usr/local/bin/tmux-click-handler \"#{mouse_status_range}\"'",
     ])?;
 
     // Double-click: rename session/window via command-prompt
     let dblclick_script = r#"#!/bin/bash
 RANGE="$1"
+TMUX_OPTS=""
+[ -n "$TMUX_SOCKET" ] && TMUX_OPTS="-L $TMUX_SOCKET"
 rm -f /tmp/tmux-pending-rename.conf
 # Session rename (non-prefixed range = session name)
 if echo "$RANGE" | grep -qE '^[a-zA-Z0-9_-]+$' && ! echo "$RANGE" | grep -q '^_'; then
@@ -66,16 +72,17 @@ elif echo "$RANGE" | grep -qE '^_wa'; then
     WIN=$(echo "$TARGET" | cut -d. -f2)
     echo "command-prompt -p \"rename window $SESS:$WIN:\" \"rename-window -t =$SESS:$WIN '%%'\"" > /tmp/tmux-pending-rename.conf
 fi
+if [ -f /tmp/tmux-pending-rename.conf ]; then
+    tmux $TMUX_OPTS source-file /tmp/tmux-pending-rename.conf
+    rm -f /tmp/tmux-pending-rename.conf
+fi
 "#;
     std::fs::write("/usr/local/bin/tmux-dblclick-handler", dblclick_script)?;
     Command::new("chmod").args(["+x", "/usr/local/bin/tmux-dblclick-handler"]).status()?;
 
     tmux::run(&[
         "bind", "-Troot", "DoubleClick1Status",
-        "if-shell -F '1' \
-            \"run-shell '/usr/local/bin/tmux-dblclick-handler \\\"#{mouse_status_range}\\\"'\" ; \
-         if-shell 'test -f /tmp/tmux-pending-rename.conf' \
-            'source-file /tmp/tmux-pending-rename.conf ; run-shell \"rm -f /tmp/tmux-pending-rename.conf\"'"
+        "run-shell '/usr/local/bin/tmux-dblclick-handler \"#{mouse_status_range}\"'",
     ])?;
 
     // Trigger sessionbar re-render
@@ -87,11 +94,9 @@ fi
     let hook_cmd = "run-shell -b 'tmux-sessionbar render-status left'";
     for hook in &[
         "window-linked", "window-unlinked", "window-renamed",
-        "after-select-window", "after-new-window", "after-select-pane", "after-split-window",
     ] {
         tmux::run(&["set-hook", "-g", hook, hook_cmd])?;
     }
-    tmux::run(&["set-hook", "-ga", "client-session-changed", hook_cmd])?;
 
     Ok(())
 }
