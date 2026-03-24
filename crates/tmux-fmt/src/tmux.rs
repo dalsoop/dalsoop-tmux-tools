@@ -167,4 +167,105 @@ mod tests {
         assert_eq!(sanitize("user@host"), "user@host");
         assert_eq!(sanitize("path/to/file"), "path/to/file");
     }
+
+    // ── Domain invariant tests ──
+
+    /// No dangerous character survives sanitize().
+    /// These are the characters that could enable shell injection, tmux format
+    /// injection, or quote escaping if they leak through.
+    const DANGEROUS_CHARS: &[char] = &['\'', '"', '\\', ';', '#', '`', '$', '{', '}', '\n', '\r', '\0'];
+
+    #[test]
+    fn domain_sanitize_shell_injection_dollar_paren() {
+        let result = sanitize("$(rm -rf /)");
+        assert!(!result.contains('$'), "$ survived: {result}");
+        assert!(!result.contains("$("), "$( survived: {result}");
+    }
+
+    #[test]
+    fn domain_sanitize_shell_injection_backtick() {
+        let result = sanitize("`whoami`");
+        assert!(!result.contains('`'), "backtick survived: {result}");
+    }
+
+    #[test]
+    fn domain_sanitize_shell_injection_semicolon() {
+        let result = sanitize("; rm -rf /");
+        assert!(!result.contains(';'), "semicolon survived: {result}");
+    }
+
+    #[test]
+    fn domain_sanitize_tmux_format_injection_hash_brace() {
+        let result = sanitize("#{command}");
+        assert!(!result.contains('#'), "# survived: {result}");
+        assert!(!result.contains('{'), "{{ survived: {result}");
+        assert!(!result.contains('}'), "}} survived: {result}");
+    }
+
+    #[test]
+    fn domain_sanitize_tmux_format_injection_hash_paren() {
+        let result = sanitize("#(shell-cmd)");
+        assert!(!result.contains('#'), "# survived in #(): {result}");
+    }
+
+    #[test]
+    fn domain_sanitize_quote_escaping() {
+        for ch in &['\'', '"', '\\'] {
+            let input = format!("a{ch}b");
+            let result = sanitize(&input);
+            assert!(!result.contains(*ch), "{ch:?} survived: {result}");
+        }
+    }
+
+    #[test]
+    fn domain_sanitize_null_and_newlines() {
+        for ch in &['\0', '\n', '\r'] {
+            let input = format!("a{ch}b");
+            let result = sanitize(&input);
+            assert!(!result.contains(*ch), "{ch:?} survived in output");
+        }
+    }
+
+    #[test]
+    fn domain_sanitize_combined_attack() {
+        let attack = "'; $(rm -rf /) #";
+        let result = sanitize(attack);
+        for ch in DANGEROUS_CHARS {
+            assert!(!result.contains(*ch), "{ch:?} survived combined attack: {result}");
+        }
+    }
+
+    #[test]
+    fn domain_sanitize_all_dangerous_chars_removed() {
+        // Build a string containing every dangerous char
+        let poison: String = DANGEROUS_CHARS.iter().collect();
+        let result = sanitize(&poison);
+        for ch in DANGEROUS_CHARS {
+            assert!(!result.contains(*ch), "{ch:?} survived sanitize of all-dangerous string");
+        }
+        assert!(result.is_empty(), "expected empty after removing all dangerous chars, got: {result}");
+    }
+
+    #[test]
+    fn domain_sanitize_idempotent() {
+        let inputs = [
+            "hello",
+            "$(cmd)",
+            "`whoami`",
+            "; rm -rf /",
+            "#{command}",
+            "#(shell-cmd)",
+            "'\"\\;#`${}",
+            "a\nb\rc\0d",
+            "'; $(rm -rf /) #",
+            "normal text with spaces",
+            "",
+            "🔐 unicode 한글",
+        ];
+        for input in &inputs {
+            let once = sanitize(input);
+            let twice = sanitize(&once);
+            assert_eq!(once, twice, "sanitize not idempotent for input: {input:?}");
+        }
+    }
 }

@@ -583,4 +583,76 @@ mod tests {
     fn reset_constant() {
         assert_eq!(RESET, "#[default]");
     }
+
+    // ── Domain invariant tests ──
+
+    /// Every Block::click() output must have balanced #[range=...] and #[norange].
+    /// Unbalanced range/norange = broken clickable regions in tmux status bar.
+    #[test]
+    fn domain_click_always_balanced_range_norange() {
+        let test_ids = [
+            "main",
+            "2",
+            "_kmain",
+            "_app0",
+            "",
+            "session with spaces",
+            "unicode-세션",
+            "a-very-long-session-name-that-goes-on-and-on",
+        ];
+
+        for id in &test_ids {
+            let output = Block::click(id)
+                .style("#000", "#fff")
+                .text(&format!(" {id} "))
+                .build();
+
+            let range_count = output.matches("#[range=").count();
+            let norange_count = output.matches("#[norange").count();
+
+            assert_eq!(
+                range_count, 1,
+                "expected exactly 1 #[range=...] for id={id:?}, got {range_count} in: {output}"
+            );
+            assert_eq!(
+                norange_count, 1,
+                "expected exactly 1 #[norange] for id={id:?}, got {norange_count} in: {output}"
+            );
+
+            // range must come before norange
+            let range_pos = output.find("#[range=").unwrap();
+            let norange_pos = output.find("#[norange").unwrap();
+            assert!(
+                range_pos < norange_pos,
+                "range must precede norange for id={id:?}: {output}"
+            );
+        }
+    }
+
+    /// The click() shorthand must also produce balanced range/norange.
+    #[test]
+    fn domain_click_shorthand_balanced_range_norange() {
+        let ids = ["main", "_k1", "_app0", ""];
+        for id in &ids {
+            let output = click(id, "#000", "#fff", false, " x ");
+            assert!(
+                output.contains("#[range=") && output.contains("#[norange"),
+                "shorthand click missing range/norange for id={id:?}: {output}"
+            );
+        }
+    }
+
+    /// Label blocks must always end with #[default] reset.
+    /// Missing reset = style bleeding into subsequent blocks.
+    #[test]
+    fn domain_label_always_resets() {
+        let labels = ["Sessions", "Windows", "Apps", "", "한글"];
+        for text in &labels {
+            let output = Block::label(text, "#98c379").build();
+            assert!(
+                output.ends_with(RESET),
+                "label({text:?}) missing terminal #[default]: {output}"
+            );
+        }
+    }
 }
