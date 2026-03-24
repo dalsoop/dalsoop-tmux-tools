@@ -26,11 +26,7 @@ pub fn run(range: &str) -> Result<()> {
     } else if let Some(user) = range.strip_prefix("_u") {
         tmux::run(&["set", "-g", "@view_user", user])?;
 
-        let has = std::process::Command::new("tmux")
-            .args(["has-session", "-t", &format!("={user}")])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+        let has = tmux::run(&["has-session", "-t", &format!("={user}")]).is_ok();
 
         if has {
             tmux::run(&["switch-client", "-t", &format!("={user}")])?;

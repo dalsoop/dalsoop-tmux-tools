@@ -36,10 +36,12 @@ pub fn apply_settings() -> Result<()> {
     // Runs click logic, then sources confirm/rename files directly to avoid race condition
     let script = format!(r#"#!/bin/bash
 RANGE="$1"
+TMUX_OPTS=""
+[ -n "$TMUX_SOCKET" ] && TMUX_OPTS="-L $TMUX_SOCKET"
 rm -f /tmp/tmux-pending-confirm.conf
 {binary_path} click "$RANGE" 2>/dev/null || tmux-sessionbar click "$RANGE" 2>/dev/null
 if [ -f /tmp/tmux-pending-confirm.conf ]; then
-    tmux source-file /tmp/tmux-pending-confirm.conf
+    tmux $TMUX_OPTS source-file /tmp/tmux-pending-confirm.conf
     rm -f /tmp/tmux-pending-confirm.conf
 fi
 "#);
@@ -54,6 +56,8 @@ fi
     // Double-click: rename session/window via command-prompt
     let dblclick_script = r#"#!/bin/bash
 RANGE="$1"
+TMUX_OPTS=""
+[ -n "$TMUX_SOCKET" ] && TMUX_OPTS="-L $TMUX_SOCKET"
 rm -f /tmp/tmux-pending-rename.conf
 # Session rename (non-prefixed range = session name)
 if echo "$RANGE" | grep -qE '^[a-zA-Z0-9_-]+$' && ! echo "$RANGE" | grep -q '^_'; then
@@ -69,7 +73,7 @@ elif echo "$RANGE" | grep -qE '^_wa'; then
     echo "command-prompt -p \"rename window $SESS:$WIN:\" \"rename-window -t =$SESS:$WIN '%%'\"" > /tmp/tmux-pending-rename.conf
 fi
 if [ -f /tmp/tmux-pending-rename.conf ]; then
-    tmux source-file /tmp/tmux-pending-rename.conf
+    tmux $TMUX_OPTS source-file /tmp/tmux-pending-rename.conf
     rm -f /tmp/tmux-pending-rename.conf
 fi
 "#;
