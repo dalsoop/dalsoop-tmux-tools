@@ -219,6 +219,20 @@ pub fn default_config() -> Config {
             mode: "window".into(),
         },
         AppEntry {
+            emoji: "🏛️".into(),
+            command: "vaultcenter".into(),
+            fg: "#282c34".into(),
+            bg: "#56b6c2".into(),
+            mode: "window".into(),
+        },
+        AppEntry {
+            emoji: "🏭".into(),
+            command: "dalcenter".into(),
+            fg: "#282c34".into(),
+            bg: "#0f766e".into(),
+            mode: "window".into(),
+        },
+        AppEntry {
             emoji: "🖥️".into(),
             command: "bash".into(),
             fg: "#282c34".into(),
