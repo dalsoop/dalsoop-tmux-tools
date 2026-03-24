@@ -26,10 +26,10 @@ use std::process::Command;
 /// If `TMUX_SOCKET` is set, prepends `-L <socket>` to use an isolated server.
 fn tmux_cmd(args: &[&str]) -> Command {
     let mut cmd = Command::new("tmux");
-    if let Ok(socket) = std::env::var("TMUX_SOCKET") {
-        if !socket.is_empty() {
-            cmd.args(["-L", &socket]);
-        }
+    if let Ok(socket) = std::env::var("TMUX_SOCKET")
+        && !socket.is_empty()
+    {
+        cmd.args(["-L", &socket]);
     }
     cmd.args(args);
     cmd
@@ -84,11 +84,17 @@ pub fn lines(args: &[&str]) -> Result<Vec<String>> {
 
 /// Sanitize a string for safe embedding in tmux command strings.
 ///
-/// Removes characters that could break tmux command parsing:
-/// single/double quotes, backslashes, semicolons, and `#`.
+/// Removes characters that could break tmux command parsing or enable
+/// command injection: quotes, backslashes, semicolons, `#`, backticks,
+/// `$`, curly braces, newlines, and null bytes.
+///
+/// Curly braces are filtered because tmux interprets `#{...}` as format
+/// strings; user input containing `{` or `}` could be interpreted as a
+/// tmux format expression (e.g. `#{shell-command:...}`) if passed to a
+/// tmux command without sanitization.
 pub fn sanitize(s: &str) -> String {
     s.chars()
-        .filter(|c| !matches!(c, '\'' | '"' | '\\' | ';' | '#'))
+        .filter(|c| !matches!(c, '\'' | '"' | '\\' | ';' | '#' | '`' | '$' | '{' | '}' | '\n' | '\r' | '\0'))
         .collect()
 }
 
@@ -133,9 +139,32 @@ mod tests {
 
     #[test]
     fn query_or_returns_fallback_when_tmux_unavailable() {
-        // This test works even without tmux running
         let result = query_or(&["show", "-gv", "@nonexistent_var_xyz"], "default");
-        // Either returns the value or the fallback
         assert!(!result.is_empty() || result == "default");
+    }
+
+    #[test]
+    fn sanitize_removes_dangerous_chars() {
+        assert_eq!(sanitize("hello"), "hello");
+        assert_eq!(sanitize("it's"), "its");
+        assert_eq!(sanitize(r#"a"b"#), "ab");
+        assert_eq!(sanitize("a\\b"), "ab");
+        assert_eq!(sanitize("a;b"), "ab");
+        assert_eq!(sanitize("a#b"), "ab");
+        assert_eq!(sanitize("a`whoami`"), "awhoami");
+        assert_eq!(sanitize("a$(cmd)"), "a(cmd)");
+        assert_eq!(sanitize("#{shell-command:ls}"), "shell-command:ls");
+        assert_eq!(sanitize("a{b}c"), "abc");
+        assert_eq!(sanitize("a\nb"), "ab");
+        assert_eq!(sanitize("a\rb"), "ab");
+        assert_eq!(sanitize("a\0b"), "ab");
+    }
+
+    #[test]
+    fn sanitize_preserves_safe_chars() {
+        assert_eq!(sanitize("hello-world_123"), "hello-world_123");
+        assert_eq!(sanitize("session (1)"), "session (1)");
+        assert_eq!(sanitize("user@host"), "user@host");
+        assert_eq!(sanitize("path/to/file"), "path/to/file");
     }
 }
