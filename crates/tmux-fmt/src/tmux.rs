@@ -26,10 +26,10 @@ use std::process::Command;
 /// If `TMUX_SOCKET` is set, prepends `-L <socket>` to use an isolated server.
 fn tmux_cmd(args: &[&str]) -> Command {
     let mut cmd = Command::new("tmux");
-    if let Ok(socket) = std::env::var("TMUX_SOCKET") {
-        if !socket.is_empty() {
-            cmd.args(["-L", &socket]);
-        }
+    if let Ok(socket) = std::env::var("TMUX_SOCKET")
+        && !socket.is_empty()
+    {
+        cmd.args(["-L", &socket]);
     }
     cmd.args(args);
     cmd
