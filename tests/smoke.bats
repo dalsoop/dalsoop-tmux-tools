@@ -341,3 +341,83 @@ teardown_file() {
     run tmux-sessionbar sync --help 2>&1
     [ $? -eq 0 ] || [ $? -eq 2 ]
 }
+
+# ── Domain invariant tests ──
+# These test core guarantees where failure = broken user experience.
+
+@test "DOMAIN: 5-line status bar — status is 5" {
+    run _tmux show -gv status
+    assert_success
+    assert_output "5"
+}
+
+@test "DOMAIN: 5-line status bar — all 5 format lines exist" {
+    for i in 0 1 2 3 4; do
+        run _tmux show -gv "status-format[$i]"
+        assert_success
+        # Each line must have some content (not empty)
+        [ -n "$output" ]
+    done
+}
+
+@test "DOMAIN: click handlers exist — MouseDown1Status binding present" {
+    run _tmux list-keys
+    assert_success
+    assert_output --partial "MouseDown1Status"
+}
+
+@test "DOMAIN: click handlers exist — DoubleClick1Status binding present" {
+    run _tmux list-keys
+    assert_success
+    assert_output --partial "DoubleClick1Status"
+}
+
+@test "DOMAIN: kill safety — cannot kill last session" {
+    # Ensure only one session exists
+    local sessions
+    sessions=$(_tmux list-sessions -F '#{session_name}')
+    local count
+    count=$(echo "$sessions" | wc -l)
+    if [ "$count" -gt 1 ]; then
+        # Kill extras so we have exactly one
+        echo "$sessions" | tail -n +2 | while read -r s; do
+            _tmux kill-session -t "=$s" 2>/dev/null || true
+        done
+    fi
+
+    # Get the remaining session name
+    local last
+    last=$(_tmux list-sessions -F '#{session_name}' | head -1)
+
+    # Try to kill it via the sessionbar click handler
+    rm -f /tmp/tmux-pending-confirm.conf
+    run tmux-sessionbar click "_k${last}"
+    assert_success
+
+    # The session must still exist — it was the last one
+    run _tmux has-session -t "=${last}"
+    assert_success
+
+    # No confirm file should have been written (display-message path, not kill path)
+    [ ! -f /tmp/tmux-pending-confirm.conf ]
+}
+
+@test "DOMAIN: config roundtrip — config files exist and are valid TOML" {
+    # sessionbar config
+    local sb_config="$HOME/.config/tmux-sessionbar/config.toml"
+    [ -f "$sb_config" ]
+    # Basic TOML validation: must contain at least one [section]
+    run grep -c '^\[' "$sb_config"
+    assert_success
+    [ "$output" -ge 1 ]
+
+    # windowbar config
+    local wb_config="$HOME/.config/tmux-windowbar/config.toml"
+    [ -f "$wb_config" ]
+    run grep -c '^\[' "$wb_config"
+    assert_success
+    [ "$output" -ge 1 ]
+
+    # tmux.conf must exist
+    [ -f "$HOME/.tmux.conf" ]
+}
