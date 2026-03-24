@@ -18,7 +18,7 @@ pub fn run(range: &str) -> Result<()> {
             if let Some(app) = config.apps.get(idx) {
                 if app.mode == "pane" {
                     tmux::run(&["split-window", "-h", &app.command])?;
-                } else {
+                } else if !switch_to_existing_app(&app.command)? {
                     tmux::run(&["new-window", "-n", &app.command, &app.command])?;
                 }
             }
@@ -93,6 +93,22 @@ fn kill_window(idx: &str) -> Result<()> {
     confirm_and_run(&format!("Kill window '{idx}'?"), &kill_cmd)?;
 
     Ok(())
+}
+
+/// Find an existing window running `command` and switch to it. Returns true if found.
+fn switch_to_existing_app(command: &str) -> Result<bool> {
+    // List all windows: "session:index:window_name"
+    let windows = tmux::lines(&[
+        "list-windows", "-a", "-F", "#{session_name}:#{window_index}:#{window_name}",
+    ])?;
+    for line in &windows {
+        let parts: Vec<&str> = line.splitn(3, ':').collect();
+        if parts.len() == 3 && parts[2] == command {
+            tmux::run(&["switch-client", "-t", &format!("={}:{}", parts[0], parts[1])])?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn confirm_and_run(title: &str, cmd: &str) -> Result<()> {
