@@ -220,7 +220,7 @@ pub fn default_config() -> Config {
         },
         AppEntry {
             emoji: "🏛️".into(),
-            command: "vaultcenter".into(),
+            command: "vaultcenter-tui".into(),
             fg: "#282c34".into(),
             bg: "#56b6c2".into(),
             mode: "window".into(),
@@ -271,5 +271,24 @@ pub fn load_config() -> anyhow::Result<Config> {
         Ok(toml::from_str(&content)?)
     } else {
         Ok(default_config())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_apps_contains_vaultcenter_tui() {
+        let config = default_config();
+        let vaultcenter_app = config
+            .apps
+            .iter()
+            .find(|app| app.command.contains("vaultcenter"))
+            .expect("default apps should contain a vaultcenter entry");
+        assert_eq!(
+            vaultcenter_app.command, "vaultcenter-tui",
+            "vaultcenter app command should be 'vaultcenter-tui', not 'vaultcenter'"
+        );
     }
 }
