@@ -73,7 +73,7 @@ jobs:
       - name: Install tmux and bats
         run: |
           sudo apt-get update
-          sudo apt-get install -y tmux
+          sudo apt-get install -y tmux ripgrep
           sudo ./tests/install-bats.sh /usr/local
 
       - name: Smoke tests

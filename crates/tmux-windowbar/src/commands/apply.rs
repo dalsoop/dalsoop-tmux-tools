@@ -34,14 +34,14 @@ pub fn apply_settings() -> Result<()> {
         "bind",
         "-Troot",
         "MouseDown1Status",
-        "run-shell '$HOME/.config/tmux-sessionbar/bin/tmux-windowbar click \"#{mouse_status_range}\" 2>/dev/null || $HOME/.config/tmux-sessionbar/bin/tmux-sessionbar click \"#{mouse_status_range}\" 2>/dev/null'",
+        "run-shell 'RANGE=\"#{mouse_status_range}\"; rm -f /tmp/tmux-pending-confirm.conf; $HOME/.config/tmux-sessionbar/bin/tmux-windowbar click \"$RANGE\" 2>/dev/null || $HOME/.config/tmux-sessionbar/bin/tmux-sessionbar click \"$RANGE\" 2>/dev/null; if [ -f /tmp/tmux-pending-confirm.conf ]; then tmux source-file /tmp/tmux-pending-confirm.conf && rm -f /tmp/tmux-pending-confirm.conf; fi'",
     ])?;
 
     tmux::run(&[
         "bind",
         "-Troot",
         "DoubleClick1Status",
-        "run-shell '$HOME/.config/tmux-sessionbar/bin/tmux-windowbar dblclick \"#{mouse_status_range}\" 2>/dev/null'",
+        "run-shell 'RANGE=\"#{mouse_status_range}\"; rm -f /tmp/tmux-pending-rename.conf; $HOME/.config/tmux-sessionbar/bin/tmux-windowbar dblclick \"$RANGE\" 2>/dev/null; if [ -f /tmp/tmux-pending-rename.conf ]; then tmux source-file /tmp/tmux-pending-rename.conf && rm -f /tmp/tmux-pending-rename.conf; fi'",
     ])?;
 
     // Trigger sessionbar re-render

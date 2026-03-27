@@ -17,8 +17,6 @@ pub fn run(range: &str) -> Result<()> {
         tmux::run(&["switch-client", "-t", &format!("={range}")])?;
     }
 
-    apply_pending_confirm()?;
-
     Ok(())
 }
 
@@ -45,15 +43,5 @@ fn kill_session(sess: &str) -> Result<()> {
     );
     std::fs::write(CONFIRM_FILE, content)?;
 
-    Ok(())
-}
-
-fn apply_pending_confirm() -> Result<()> {
-    if !std::path::Path::new(CONFIRM_FILE).exists() {
-        return Ok(());
-    }
-
-    tmux::run(&["source-file", CONFIRM_FILE])?;
-    let _ = std::fs::remove_file(CONFIRM_FILE);
     Ok(())
 }

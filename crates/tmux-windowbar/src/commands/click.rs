@@ -77,8 +77,6 @@ pub fn run(range: &str) -> Result<()> {
         bail!("unknown range: {range}");
     }
 
-    apply_pending_confirm()?;
-
     Ok(())
 }
 
@@ -102,8 +100,6 @@ pub fn run_dblclick(range: &str) -> Result<()> {
             "command-prompt -p \"rename window {sess}:{win}:\" \"rename-window -t ={sess}:{win} '%%'\""
         ))?;
     }
-
-    apply_pending_rename()?;
     Ok(())
 }
 
@@ -154,25 +150,5 @@ fn confirm_and_run(title: &str, cmd: &str) -> Result<()> {
 
 fn write_rename_prompt(content: &str) -> Result<()> {
     std::fs::write(RENAME_FILE, content)?;
-    Ok(())
-}
-
-fn apply_pending_confirm() -> Result<()> {
-    if !std::path::Path::new(CONFIRM_FILE).exists() {
-        return Ok(());
-    }
-
-    tmux::run(&["source-file", CONFIRM_FILE])?;
-    let _ = std::fs::remove_file(CONFIRM_FILE);
-    Ok(())
-}
-
-fn apply_pending_rename() -> Result<()> {
-    if !std::path::Path::new(RENAME_FILE).exists() {
-        return Ok(());
-    }
-
-    tmux::run(&["source-file", RENAME_FILE])?;
-    let _ = std::fs::remove_file(RENAME_FILE);
     Ok(())
 }

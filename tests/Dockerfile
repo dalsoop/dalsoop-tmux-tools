@@ -10,6 +10,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     tmux \
     git \
+    ripgrep \
     sudo \
     curl \
     procps \
@@ -19,6 +20,7 @@ RUN apt-get update && apt-get install -y \
 COPY --from=builder /app/target/release/tmux-sessionbar /usr/local/bin/
 COPY --from=builder /app/target/release/tmux-windowbar /usr/local/bin/
 
+COPY crates/ /app/crates/
 COPY tests/ /app/tests/
 
 RUN /app/tests/install-bats.sh /usr/local
