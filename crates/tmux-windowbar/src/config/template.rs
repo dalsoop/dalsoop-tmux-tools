@@ -181,6 +181,8 @@ pub fn default_config() -> Config {
     colors.insert("htop".into(), ColorEntry { fg: "#282c34".into(), bg: "#d19a66".into() });
     colors.insert("codex".into(), ColorEntry { fg: "#282c34".into(), bg: "#98c379".into() });
     colors.insert("veilkey".into(), ColorEntry { fg: "#282c34".into(), bg: "#98c379".into() });
+    colors.insert("lazygit".into(), ColorEntry { fg: "#282c34".into(), bg: "#e06c75".into() });
+    colors.insert("lazydocker".into(), ColorEntry { fg: "#282c34".into(), bg: "#61afef".into() });
 
     let apps = vec![
         AppEntry {
@@ -209,6 +211,20 @@ pub fn default_config() -> Config {
             command: "htop".into(),
             fg: "#282c34".into(),
             bg: "#d19a66".into(),
+            mode: "window".into(),
+        },
+        AppEntry {
+            emoji: "📂".into(),
+            command: "lazygit".into(),
+            fg: "#282c34".into(),
+            bg: "#e06c75".into(),
+            mode: "window".into(),
+        },
+        AppEntry {
+            emoji: "🐳".into(),
+            command: "lazydocker".into(),
+            fg: "#282c34".into(),
+            bg: "#61afef".into(),
             mode: "window".into(),
         },
         AppEntry {
