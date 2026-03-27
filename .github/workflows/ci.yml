@@ -74,11 +74,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y tmux
-          git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats
-          sudo /tmp/bats/install.sh /usr/local
-          sudo mkdir -p /usr/lib/bats
-          sudo git clone --depth 1 https://github.com/bats-core/bats-support.git /usr/lib/bats/bats-support
-          sudo git clone --depth 1 https://github.com/bats-core/bats-assert.git /usr/lib/bats/bats-assert
+          sudo ./tests/install-bats.sh /usr/local
 
       - name: Smoke tests
         run: bats tests/smoke.bats

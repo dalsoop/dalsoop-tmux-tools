@@ -15,19 +15,13 @@ RUN apt-get update && apt-get install -y \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-# Install bats (latest from GitHub for better features)
-RUN git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats && \
-    /tmp/bats/install.sh /usr/local && \
-    rm -rf /tmp/bats && \
-    mkdir -p /usr/lib/bats && \
-    git clone --depth 1 https://github.com/bats-core/bats-support.git /usr/lib/bats/bats-support && \
-    git clone --depth 1 https://github.com/bats-core/bats-assert.git /usr/lib/bats/bats-assert
-
 # Copy binaries from builder
 COPY --from=builder /app/target/release/tmux-sessionbar /usr/local/bin/
 COPY --from=builder /app/target/release/tmux-windowbar /usr/local/bin/
 
 COPY tests/ /app/tests/
+
+RUN /app/tests/install-bats.sh /usr/local
 
 # tmux needs a terminal
 ENV TERM=xterm-256color

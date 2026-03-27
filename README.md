@@ -47,6 +47,7 @@ Apps      🔐 spf  🤖 claude  🧠 codex  📊 htop  🐍 python3  🖥️ ba
 - tmux >= 3.4 (for `range=user` support)
 - git (for TPM installation)
 - Rust >= 1.70 (to build from source)
+- bats-core + bats-support + bats-assert (for smoke tests)
 
 ## Install
 
@@ -287,6 +288,9 @@ Bindings provided by plugins:
 ```bash
 # Run unit + doc tests
 cargo test
+
+# Install bats test dependencies
+./tests/install-bats.sh /usr/local
 
 # Run smoke tests (47 tests)
 bats tests/smoke.bats
