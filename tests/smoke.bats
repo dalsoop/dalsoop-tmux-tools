@@ -240,7 +240,7 @@ teardown_file() {
 
 @test "MouseDown1Status uses run-shell directly (no if-shell race)" {
     run _tmux list-keys
-    assert_output --partial 'tmux-windowbar click "#{mouse_status_range}"'
+    assert_output --partial '$HOME/.config/tmux-sessionbar/bin/tmux-windowbar click "#{mouse_status_range}"'
     refute_output --partial "if-shell.*pending-confirm"
 }
 
@@ -293,7 +293,7 @@ teardown_file() {
 @test "double-click binding is set" {
     run _tmux list-keys
     assert_output --partial "DoubleClick1Status"
-    assert_output --partial 'tmux-windowbar dblclick "#{mouse_status_range}"'
+    assert_output --partial '$HOME/.config/tmux-sessionbar/bin/tmux-windowbar dblclick "#{mouse_status_range}"'
 }
 
 # --- Pane clear ---

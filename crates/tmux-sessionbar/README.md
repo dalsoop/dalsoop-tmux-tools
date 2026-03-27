@@ -25,13 +25,13 @@ tmux-sessionbar plugin-install    # Reinstall all plugins
 5. Reloads tmux config
 6. Installs all plugins via TPM
 7. Creates `/tmp/tmux-{uid}` dir (LXC compatibility)
-8. Symlinks binaries to `/usr/bin` if needed (PATH fix)
+8. Writes `~/.config/tmux-sessionbar/bin` shims so tmux can call stable paths without relying on server `PATH`
 
 ## How It Works
 
 - `status-format[1]` is set directly with session blocks wrapped in `#[range=user|name]`
 - tmux hooks (`client-session-changed`, `session-created`, etc.) trigger re-render
-- Mouse clicks handled directly by `tmux-windowbar`/`tmux-sessionbar` bindings with confirm-before for kills
+- Mouse clicks handled directly by home-local shim bindings with confirm-before for kills
 - CPU/memory stats read from `/proc/loadavg` and `/proc/meminfo`
 - Plugins managed as `[[plugins]]` entries in `config.toml`
 - 🧹 clear button and `Alt+k` keybinding to clear pane screen + scrollback

@@ -1,6 +1,6 @@
 use crate::config::template::{self, default_config};
 use crate::config::tmux_conf;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -13,10 +13,8 @@ pub fn run() -> Result<()> {
 
     println!("=== tmux-sessionbar init ===\n");
 
-    // 0. Ensure tmux socket dir exists and binaries are in PATH
+    // 0. Ensure tmux socket dir exists
     ensure_tmux_tmpdir();
-    ensure_in_path("tmux-sessionbar");
-    ensure_in_path("tmux-windowbar");
 
     // 1. Backup existing .tmux.conf
     if tmux_conf_path.exists() {
@@ -44,6 +42,7 @@ pub fn run() -> Result<()> {
         .context("failed to get current exe path")?
         .to_string_lossy()
         .to_string();
+    install_shims(&binary_path, &resolve_executable("tmux-windowbar")?)?;
     let conf_content = tmux_conf::generate(&config, &binary_path);
     fs::write(&tmux_conf_path, &conf_content)?;
     println!("[3/7] generated: {}", tmux_conf_path.display());
@@ -151,14 +150,36 @@ fn ensure_tmux_tmpdir() {
     }
 }
 
-fn ensure_in_path(name: &str) {
-    let local_bin = format!("/usr/local/bin/{name}");
-    let usr_bin = format!("/usr/bin/{name}");
+fn install_shims(sessionbar_path: &str, windowbar_path: &str) -> Result<()> {
+    let bin_dir = template::bin_dir();
+    fs::create_dir_all(&bin_dir)?;
+    write_shim(&template::shim_path("tmux-sessionbar"), sessionbar_path)?;
+    write_shim(&template::shim_path("tmux-windowbar"), windowbar_path)?;
+    Ok(())
+}
 
-    if std::path::Path::new(&local_bin).exists() && !std::path::Path::new(&usr_bin).exists() {
-        let path = std::env::var("PATH").unwrap_or_default();
-        if !path.contains("/usr/local/bin") {
-            let _ = std::os::unix::fs::symlink(&local_bin, &usr_bin);
+fn write_shim(path: &PathBuf, target: &str) -> Result<()> {
+    let script = format!("#!/bin/sh\nexec '{}' \"$@\"\n", shell_escape(target));
+    fs::write(path, script)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(())
+}
+
+fn resolve_executable(name: &str) -> Result<String> {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Ok(candidate.to_string_lossy().into_owned());
         }
     }
+    bail!("required executable not found in PATH: {name}")
+}
+
+fn shell_escape(path: &str) -> String {
+    path.replace('\'', "'\"'\"'")
 }

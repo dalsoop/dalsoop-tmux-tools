@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 pub const CONFIG_DIR: &str = ".config/tmux-sessionbar";
 pub const CONFIG_FILE: &str = "config.toml";
+pub const BIN_DIR: &str = "bin";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PluginEntry {
@@ -354,6 +355,14 @@ pub fn config_dir() -> PathBuf {
 
 pub fn config_path() -> PathBuf {
     config_dir().join(CONFIG_FILE)
+}
+
+pub fn bin_dir() -> PathBuf {
+    config_dir().join(BIN_DIR)
+}
+
+pub fn shim_path(name: &str) -> PathBuf {
+    bin_dir().join(name)
 }
 
 fn dirs_home() -> PathBuf {

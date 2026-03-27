@@ -82,11 +82,15 @@ pub fn generate(config: &Config, _binary_path: &str) -> String {
 
     // Mouse click binding + windowbar hooks
     out.push_str("# --- Mouse click + windowbar hooks ---\n");
-    out.push_str("run-shell -b 'tmux-windowbar apply'\n\n");
+    out.push_str(
+        "run-shell -b '#{d:current_file}/.config/tmux-sessionbar/bin/tmux-windowbar apply'\n\n",
+    );
 
     // Hooks: update session list on session events
     out.push_str("# --- Hooks: update session list dynamically ---\n");
-    let hook_cmd = "run-shell -b 'tmux-sessionbar render-status left'".to_string();
+    let hook_cmd =
+        "run-shell -b '#{d:current_file}/.config/tmux-sessionbar/bin/tmux-sessionbar render-status left'"
+            .to_string();
     out.push_str(&format!(
         "set-hook -g client-session-changed \"{hook_cmd}\"\n"
     ));
@@ -96,7 +100,9 @@ pub fn generate(config: &Config, _binary_path: &str) -> String {
     out.push('\n');
 
     // Run once on load to populate initial status (synchronous — no -b flag)
-    let init_cmd = "run-shell 'tmux-sessionbar render-status left'".to_string();
+    let init_cmd =
+        "run-shell '#{d:current_file}/.config/tmux-sessionbar/bin/tmux-sessionbar render-status left'"
+            .to_string();
     out.push_str(&format!("{init_cmd}\n\n"));
 
     // Plugins from config.toml
@@ -202,15 +208,21 @@ mod tests {
     fn uses_correct_binary_path() {
         let custom = "/opt/bin/my-sessionbar";
         let out = generate(&default_config(), custom);
-        assert!(out.contains("run-shell 'tmux-sessionbar render-status left'"));
-        assert!(out.contains("run-shell -b 'tmux-sessionbar render-status left'"));
+        assert!(out.contains(
+            "run-shell '#{d:current_file}/.config/tmux-sessionbar/bin/tmux-sessionbar render-status left'"
+        ));
+        assert!(out.contains(
+            "run-shell -b '#{d:current_file}/.config/tmux-sessionbar/bin/tmux-sessionbar render-status left'"
+        ));
         assert!(!out.contains(custom));
     }
 
     #[test]
     fn windowbar_apply_uses_path_lookup() {
         let out = make(&default_config());
-        assert!(out.contains("run-shell -b 'tmux-windowbar apply'"));
+        assert!(out.contains(
+            "run-shell -b '#{d:current_file}/.config/tmux-sessionbar/bin/tmux-windowbar apply'"
+        ));
         assert!(!out.contains("/usr/local/bin/tmux-windowbar"));
     }
 
