@@ -4,7 +4,10 @@ mod config;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "tmux-windowbar", about = "Clickable window list with [+][x] for tmux status bar")]
+#[command(
+    name = "tmux-windowbar",
+    about = "Clickable window list with [+][x] for tmux status bar"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -18,6 +21,11 @@ enum Commands {
     Apply,
     /// Handle mouse click (called by tmux internally)
     Click {
+        /// The mouse_status_range value
+        range: String,
+    },
+    /// Handle mouse double-click (called by tmux internally)
+    Dblclick {
         /// The mouse_status_range value
         range: String,
     },
@@ -46,6 +54,7 @@ fn main() {
         Commands::Init => commands::init::run(),
         Commands::Apply => commands::apply::run(),
         Commands::Click { range } => commands::click::run(&range),
+        Commands::Dblclick { range } => commands::click::run_dblclick(&range),
         Commands::Render => commands::render::run(),
         Commands::RenderView => {
             print!("{}", commands::render::render_view_switcher());

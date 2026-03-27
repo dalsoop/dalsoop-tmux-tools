@@ -1,6 +1,6 @@
 use crate::config::template::{self, default_config};
 use crate::config::tmux_conf;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -13,12 +13,8 @@ pub fn run() -> Result<()> {
 
     println!("=== tmux-sessionbar init ===\n");
 
-    // 0. Ensure tmux socket dir exists and binaries are in PATH
+    // 0. Ensure tmux socket dir exists
     ensure_tmux_tmpdir();
-    ensure_in_path("tmux-sessionbar");
-    ensure_in_path("tmux-windowbar");
-    ensure_in_path("tmux-click-handler");
-    ensure_in_path("tmux-dblclick-handler");
 
     // 1. Backup existing .tmux.conf
     if tmux_conf_path.exists() {
@@ -46,6 +42,7 @@ pub fn run() -> Result<()> {
         .context("failed to get current exe path")?
         .to_string_lossy()
         .to_string();
+    install_shims(&binary_path, &resolve_executable("tmux-windowbar")?)?;
     let conf_content = tmux_conf::generate(&config, &binary_path);
     fs::write(&tmux_conf_path, &conf_content)?;
     println!("[3/7] generated: {}", tmux_conf_path.display());
@@ -56,7 +53,9 @@ pub fn run() -> Result<()> {
         println!("[4/7] installing TPM...");
         let output = Command::new("git")
             .args([
-                "clone", "--depth", "1",
+                "clone",
+                "--depth",
+                "1",
                 "https://github.com/tmux-plugins/tpm",
                 &tpm_dir.to_string_lossy(),
             ])
@@ -65,7 +64,10 @@ pub fn run() -> Result<()> {
         if output.status.success() {
             println!("[4/7] TPM installed");
         } else {
-            eprintln!("[4/7] TPM install failed: {}", String::from_utf8_lossy(&output.stderr));
+            eprintln!(
+                "[4/7] TPM install failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
     } else {
         println!("[4/7] TPM already installed");
@@ -76,9 +78,7 @@ pub fn run() -> Result<()> {
     fs::create_dir_all(&wb_config_dir)?;
     let wb_config_path = wb_config_dir.join("config.toml");
     if !wb_config_path.exists() {
-        let wb_result = Command::new("tmux-windowbar")
-            .args(["init"])
-            .output();
+        let wb_result = Command::new("tmux-windowbar").args(["init"]).output();
         match wb_result {
             Ok(o) if o.status.success() => println!("[5/7] windowbar initialized"),
             _ => println!("[5/7] windowbar init skipped (binary not found or tmux not running)"),
@@ -95,9 +95,7 @@ pub fn run() -> Result<()> {
     match reload {
         Ok(s) if s.success() => {
             println!("[6/7] tmux config reloaded");
-            let _ = Command::new("tmux-windowbar")
-                .args(["apply"])
-                .status();
+            let _ = Command::new("tmux-windowbar").args(["apply"]).status();
         }
         _ => println!("[6/7] tmux not running — will apply on next start"),
     }
@@ -123,7 +121,9 @@ pub fn run() -> Result<()> {
             println!("[7/7] {count} plugins installed");
         }
     } else {
-        println!("[7/7] skipped plugin install (TPM not ready, run `tmux-sessionbar plugin-install` later)");
+        println!(
+            "[7/7] skipped plugin install (TPM not ready, run `tmux-sessionbar plugin-install` later)"
+        );
     }
 
     println!("\n=== done ===");
@@ -138,7 +138,9 @@ fn home_dir() -> PathBuf {
 }
 
 fn ensure_tmux_tmpdir() {
-    let uid = Command::new("id").args(["-u"]).output()
+    let uid = Command::new("id")
+        .args(["-u"])
+        .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|_| "0".into());
     let dir = format!("/tmp/tmux-{uid}");
@@ -148,14 +150,36 @@ fn ensure_tmux_tmpdir() {
     }
 }
 
-fn ensure_in_path(name: &str) {
-    let local_bin = format!("/usr/local/bin/{name}");
-    let usr_bin = format!("/usr/bin/{name}");
+fn install_shims(sessionbar_path: &str, windowbar_path: &str) -> Result<()> {
+    let bin_dir = template::bin_dir();
+    fs::create_dir_all(&bin_dir)?;
+    write_shim(&template::shim_path("tmux-sessionbar"), sessionbar_path)?;
+    write_shim(&template::shim_path("tmux-windowbar"), windowbar_path)?;
+    Ok(())
+}
 
-    if std::path::Path::new(&local_bin).exists() && !std::path::Path::new(&usr_bin).exists() {
-        let path = std::env::var("PATH").unwrap_or_default();
-        if !path.contains("/usr/local/bin") {
-            let _ = std::os::unix::fs::symlink(&local_bin, &usr_bin);
+fn write_shim(path: &PathBuf, target: &str) -> Result<()> {
+    let script = format!("#!/bin/sh\nexec '{}' \"$@\"\n", shell_escape(target));
+    fs::write(path, script)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(())
+}
+
+fn resolve_executable(name: &str) -> Result<String> {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Ok(candidate.to_string_lossy().into_owned());
         }
     }
+    bail!("required executable not found in PATH: {name}")
+}
+
+fn shell_escape(path: &str) -> String {
+    path.replace('\'', "'\"'\"'")
 }

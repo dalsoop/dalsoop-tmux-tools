@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::path::Path;
 use std::process::Command;
 
@@ -9,12 +9,18 @@ pub fn run() -> Result<()> {
     let mut users: Vec<String> = Vec::new();
     for line in passwd.lines() {
         let fields: Vec<&str> = line.split(':').collect();
-        if fields.len() < 7 { continue; }
+        if fields.len() < 7 {
+            continue;
+        }
         let name = fields[0];
         let uid: u32 = fields[2].parse().unwrap_or(0);
         let shell = fields[6];
-        if shell.contains("nologin") || shell.contains("/false") { continue; }
-        if uid >= 1000 { users.push(name.to_string()); }
+        if shell.contains("nologin") || shell.contains("/false") {
+            continue;
+        }
+        if uid >= 1000 {
+            users.push(name.to_string());
+        }
     }
 
     if users.is_empty() {
@@ -66,7 +72,12 @@ pub fn run() -> Result<()> {
         let user_plugins = format!("{home}/.tmux/plugins");
         if Path::new(root_plugins).exists() {
             Command::new("rsync")
-                .args(["-a", "--exclude=tpm", &format!("{root_plugins}/"), &format!("{user_plugins}/")])
+                .args([
+                    "-a",
+                    "--exclude=tpm",
+                    &format!("{root_plugins}/"),
+                    &format!("{user_plugins}/"),
+                ])
                 .status()
                 .ok();
         }

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::fs;
 use std::path::PathBuf;
 use tmux_fmt::tmux;
@@ -13,12 +13,17 @@ pub fn save(name: &str) -> Result<()> {
     fs::create_dir_all(&dir)?;
 
     let content = tmux::query(&[
-        "list-windows", "-F", "#{window_index}:#{window_name}:#{window_layout}",
+        "list-windows",
+        "-F",
+        "#{window_index}:#{window_name}:#{window_layout}",
     ])?;
 
     let path = dir.join(format!("{name}.layout"));
     fs::write(&path, &content)?;
-    println!("saved layout '{name}' ({} windows)", content.lines().count());
+    println!(
+        "saved layout '{name}' ({} windows)",
+        content.lines().count()
+    );
 
     Ok(())
 }

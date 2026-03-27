@@ -11,6 +11,7 @@ tmux-windowbar render             # Render window list (called by sessionbar)
 tmux-windowbar render-view        # Output view switcher icons
 
 tmux-windowbar click <range>      # Handle mouse click (called by tmux)
+tmux-windowbar dblclick <range>   # Handle mouse double-click (called by tmux)
 
 tmux-windowbar layout-save <name> # Save current window/pane layout
 tmux-windowbar layout-load <name> # Restore saved layout

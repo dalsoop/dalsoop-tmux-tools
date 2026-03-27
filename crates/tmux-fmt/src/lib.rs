@@ -174,11 +174,7 @@ impl Block {
 
     /// Build the format string.
     pub fn build(&self) -> String {
-        let tag = style_tag(
-            self.fg.as_deref(),
-            self.bg.as_deref(),
-            self.bold,
-        );
+        let tag = style_tag(self.fg.as_deref(), self.bg.as_deref(), self.bold);
         let mut out = String::new();
 
         match &self.kind {
@@ -497,9 +493,7 @@ mod tests {
 
     #[test]
     fn tmux_conf_block() {
-        let s = Block::tmux_conf("#aaa", "#333")
-            .text(" #I:#W ")
-            .build();
+        let s = Block::tmux_conf("#aaa", "#333").text(" #I:#W ").build();
         assert_eq!(s, "#[fg=#aaa,bg=#333] #I:#W ");
     }
 

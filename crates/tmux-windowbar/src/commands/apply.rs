@@ -1,5 +1,5 @@
 use crate::config::template;
-use anyhow::{bail, Context, Result};
+use anyhow::{Result, bail};
 use std::process::Command;
 use tmux_fmt::tmux;
 
@@ -27,62 +27,21 @@ pub fn apply_settings() -> Result<()> {
         std::fs::write(&config_path, &updated)?;
     }
 
-    let binary_path = std::env::current_exe()
-        .context("failed to get current exe path")?
-        .to_string_lossy()
-        .to_string();
-
-    // Write click handler script
-    // Runs click logic, then sources confirm/rename files directly to avoid race condition
-    let script = format!(r#"#!/bin/bash
-RANGE="$1"
-TMUX_OPTS=""
-[ -n "$TMUX_SOCKET" ] && TMUX_OPTS="-L $TMUX_SOCKET"
-rm -f /tmp/tmux-pending-confirm.conf
-{binary_path} click "$RANGE" 2>/dev/null || tmux-sessionbar click "$RANGE" 2>/dev/null
-if [ -f /tmp/tmux-pending-confirm.conf ]; then
-    tmux $TMUX_OPTS source-file /tmp/tmux-pending-confirm.conf
-    rm -f /tmp/tmux-pending-confirm.conf
-fi
-"#);
-    std::fs::write("/usr/local/bin/tmux-click-handler", &script)?;
-    Command::new("chmod").args(["+x", "/usr/local/bin/tmux-click-handler"]).status()?;
+    let windowbar_path = std::env::current_exe()?.to_string_lossy().into_owned();
+    install_shims(&resolve_executable("tmux-sessionbar")?, &windowbar_path)?;
 
     tmux::run(&[
-        "bind", "-Troot", "MouseDown1Status",
-        "run-shell '/usr/local/bin/tmux-click-handler \"#{mouse_status_range}\"'",
+        "bind",
+        "-Troot",
+        "MouseDown1Status",
+        "run-shell 'RANGE=\"#{mouse_status_range}\"; rm -f /tmp/tmux-pending-confirm.conf; $HOME/.config/tmux-sessionbar/bin/tmux-windowbar click \"$RANGE\" 2>/dev/null || $HOME/.config/tmux-sessionbar/bin/tmux-sessionbar click \"$RANGE\" 2>/dev/null; if [ -f /tmp/tmux-pending-confirm.conf ]; then tmux source-file /tmp/tmux-pending-confirm.conf && rm -f /tmp/tmux-pending-confirm.conf; fi'",
     ])?;
 
-    // Double-click: rename session/window via command-prompt
-    let dblclick_script = r#"#!/bin/bash
-RANGE="$1"
-TMUX_OPTS=""
-[ -n "$TMUX_SOCKET" ] && TMUX_OPTS="-L $TMUX_SOCKET"
-rm -f /tmp/tmux-pending-rename.conf
-# Session rename (non-prefixed range = session name)
-if echo "$RANGE" | grep -qE '^[a-zA-Z0-9_-]+$' && ! echo "$RANGE" | grep -q '^_'; then
-    echo "command-prompt -I \"$RANGE\" -p \"rename session:\" \"rename-session '%%'\"" > /tmp/tmux-pending-rename.conf
-# Window rename (_ws or _wa prefix)
-elif echo "$RANGE" | grep -qE '^_ws'; then
-    IDX=$(echo "$RANGE" | sed 's/^_ws//')
-    echo "command-prompt -p \"rename window $IDX:\" \"rename-window -t :$IDX '%%'\"" > /tmp/tmux-pending-rename.conf
-elif echo "$RANGE" | grep -qE '^_wa'; then
-    TARGET=$(echo "$RANGE" | sed 's/^_wa//')
-    SESS=$(echo "$TARGET" | cut -d. -f1)
-    WIN=$(echo "$TARGET" | cut -d. -f2)
-    echo "command-prompt -p \"rename window $SESS:$WIN:\" \"rename-window -t =$SESS:$WIN '%%'\"" > /tmp/tmux-pending-rename.conf
-fi
-if [ -f /tmp/tmux-pending-rename.conf ]; then
-    tmux $TMUX_OPTS source-file /tmp/tmux-pending-rename.conf
-    rm -f /tmp/tmux-pending-rename.conf
-fi
-"#;
-    std::fs::write("/usr/local/bin/tmux-dblclick-handler", dblclick_script)?;
-    Command::new("chmod").args(["+x", "/usr/local/bin/tmux-dblclick-handler"]).status()?;
-
     tmux::run(&[
-        "bind", "-Troot", "DoubleClick1Status",
-        "run-shell '/usr/local/bin/tmux-dblclick-handler \"#{mouse_status_range}\"'",
+        "bind",
+        "-Troot",
+        "DoubleClick1Status",
+        "run-shell 'RANGE=\"#{mouse_status_range}\"; rm -f /tmp/tmux-pending-rename.conf; $HOME/.config/tmux-sessionbar/bin/tmux-windowbar dblclick \"$RANGE\" 2>/dev/null; if [ -f /tmp/tmux-pending-rename.conf ]; then tmux source-file /tmp/tmux-pending-rename.conf && rm -f /tmp/tmux-pending-rename.conf; fi'",
     ])?;
 
     // Trigger sessionbar re-render
@@ -92,11 +51,46 @@ fi
 
     // Hooks
     let hook_cmd = "run-shell -b 'tmux-sessionbar render-status left'";
-    for hook in &[
-        "window-linked", "window-unlinked", "window-renamed",
-    ] {
+    for hook in &["window-linked", "window-unlinked", "window-renamed"] {
         tmux::run(&["set-hook", "-g", hook, hook_cmd])?;
     }
 
     Ok(())
+}
+
+fn install_shims(sessionbar_path: &str, windowbar_path: &str) -> Result<()> {
+    let bin_dir = std::env::var("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("/root"))
+        .join(".config/tmux-sessionbar/bin");
+    std::fs::create_dir_all(&bin_dir)?;
+    write_shim(&bin_dir.join("tmux-sessionbar"), sessionbar_path)?;
+    write_shim(&bin_dir.join("tmux-windowbar"), windowbar_path)?;
+    Ok(())
+}
+
+fn write_shim(path: &std::path::Path, target: &str) -> Result<()> {
+    let script = format!("#!/bin/sh\nexec '{}' \"$@\"\n", shell_escape(target));
+    std::fs::write(path, script)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(())
+}
+
+fn resolve_executable(name: &str) -> Result<String> {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Ok(candidate.to_string_lossy().into_owned());
+        }
+    }
+    bail!("required executable not found in PATH: {name}")
+}
+
+fn shell_escape(path: &str) -> String {
+    path.replace('\'', "'\"'\"'")
 }

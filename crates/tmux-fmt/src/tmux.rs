@@ -77,7 +77,11 @@ pub fn run_quiet(args: &[&str]) {
 /// Run a tmux command and return the full output (stdout lines).
 pub fn lines(args: &[&str]) -> Result<Vec<String>> {
     let out = query(args)?;
-    Ok(out.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+    Ok(out
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect())
 }
 
 // ── Sanitization ──
@@ -94,7 +98,12 @@ pub fn lines(args: &[&str]) -> Result<Vec<String>> {
 /// tmux command without sanitization.
 pub fn sanitize(s: &str) -> String {
     s.chars()
-        .filter(|c| !matches!(c, '\'' | '"' | '\\' | ';' | '#' | '`' | '$' | '{' | '}' | '\n' | '\r' | '\0'))
+        .filter(|c| {
+            !matches!(
+                c,
+                '\'' | '"' | '\\' | ';' | '#' | '`' | '$' | '{' | '}' | '\n' | '\r' | '\0'
+            )
+        })
         .collect()
 }
 
@@ -131,7 +140,6 @@ pub fn acquire_guard(name: &str, debounce_ms: u128) -> bool {
     run_quiet(&["set", "-g", &var, &now.to_string()]);
     true
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -173,7 +181,9 @@ mod tests {
     /// No dangerous character survives sanitize().
     /// These are the characters that could enable shell injection, tmux format
     /// injection, or quote escaping if they leak through.
-    const DANGEROUS_CHARS: &[char] = &['\'', '"', '\\', ';', '#', '`', '$', '{', '}', '\n', '\r', '\0'];
+    const DANGEROUS_CHARS: &[char] = &[
+        '\'', '"', '\\', ';', '#', '`', '$', '{', '}', '\n', '\r', '\0',
+    ];
 
     #[test]
     fn domain_sanitize_shell_injection_dollar_paren() {
@@ -231,7 +241,10 @@ mod tests {
         let attack = "'; $(rm -rf /) #";
         let result = sanitize(attack);
         for ch in DANGEROUS_CHARS {
-            assert!(!result.contains(*ch), "{ch:?} survived combined attack: {result}");
+            assert!(
+                !result.contains(*ch),
+                "{ch:?} survived combined attack: {result}"
+            );
         }
     }
 
@@ -241,9 +254,15 @@ mod tests {
         let poison: String = DANGEROUS_CHARS.iter().collect();
         let result = sanitize(&poison);
         for ch in DANGEROUS_CHARS {
-            assert!(!result.contains(*ch), "{ch:?} survived sanitize of all-dangerous string");
+            assert!(
+                !result.contains(*ch),
+                "{ch:?} survived sanitize of all-dangerous string"
+            );
         }
-        assert!(result.is_empty(), "expected empty after removing all dangerous chars, got: {result}");
+        assert!(
+            result.is_empty(),
+            "expected empty after removing all dangerous chars, got: {result}"
+        );
     }
 
     #[test]
