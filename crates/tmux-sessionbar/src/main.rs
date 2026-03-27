@@ -4,7 +4,10 @@ mod config;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "tmux-sessionbar", about = "Clickable session list for tmux status bar")]
+#[command(
+    name = "tmux-sessionbar",
+    about = "Clickable session list for tmux status bar"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

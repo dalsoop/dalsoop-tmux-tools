@@ -1,6 +1,9 @@
 use crate::config::template::load_config;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use tmux_fmt::tmux;
+
+const CONFIRM_FILE: &str = "/tmp/tmux-pending-confirm.conf";
+const RENAME_FILE: &str = "/tmp/tmux-pending-rename.conf";
 
 pub fn run(range: &str) -> Result<()> {
     if let Some(mode) = range.strip_prefix("_v") {
@@ -74,6 +77,33 @@ pub fn run(range: &str) -> Result<()> {
         bail!("unknown range: {range}");
     }
 
+    apply_pending_confirm()?;
+
+    Ok(())
+}
+
+pub fn run_dblclick(range: &str) -> Result<()> {
+    if range
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-'))
+        && !range.starts_with('_')
+    {
+        write_rename_prompt(&format!(
+            "command-prompt -I \"{range}\" -p \"rename session:\" \"rename-session '%%'\""
+        ))?;
+    } else if let Some(idx) = range.strip_prefix("_ws") {
+        write_rename_prompt(&format!(
+            "command-prompt -p \"rename window {idx}:\" \"rename-window -t :{idx} '%%'\""
+        ))?;
+    } else if let Some(target) = range.strip_prefix("_wa")
+        && let Some((sess, win)) = target.split_once('.')
+    {
+        write_rename_prompt(&format!(
+            "command-prompt -p \"rename window {sess}:{win}:\" \"rename-window -t ={sess}:{win} '%%'\""
+        ))?;
+    }
+
+    apply_pending_rename()?;
     Ok(())
 }
 
@@ -95,12 +125,19 @@ fn kill_window(idx: &str) -> Result<()> {
 fn switch_to_existing_app(command: &str) -> Result<bool> {
     // List all windows: "session:index:window_name"
     let windows = tmux::lines(&[
-        "list-windows", "-a", "-F", "#{session_name}:#{window_index}:#{window_name}",
+        "list-windows",
+        "-a",
+        "-F",
+        "#{session_name}:#{window_index}:#{window_name}",
     ])?;
     for line in &windows {
         let parts: Vec<&str> = line.splitn(3, ':').collect();
         if parts.len() == 3 && parts[2] == command {
-            tmux::run(&["switch-client", "-t", &format!("={}:{}", parts[0], parts[1])])?;
+            tmux::run(&[
+                "switch-client",
+                "-t",
+                &format!("={}:{}", parts[0], parts[1]),
+            ])?;
             return Ok(true);
         }
     }
@@ -110,9 +147,32 @@ fn switch_to_existing_app(command: &str) -> Result<bool> {
 fn confirm_and_run(title: &str, cmd: &str) -> Result<()> {
     let safe_title = tmux::sanitize(title);
     let safe_cmd = tmux::sanitize(cmd);
-    let content = format!(
-        "confirm-before -p \"{safe_title} (y/n)\" \"{safe_cmd}\""
-    );
-    std::fs::write("/tmp/tmux-pending-confirm.conf", content)?;
+    let content = format!("confirm-before -p \"{safe_title} (y/n)\" \"{safe_cmd}\"");
+    std::fs::write(CONFIRM_FILE, content)?;
+    Ok(())
+}
+
+fn write_rename_prompt(content: &str) -> Result<()> {
+    std::fs::write(RENAME_FILE, content)?;
+    Ok(())
+}
+
+fn apply_pending_confirm() -> Result<()> {
+    if !std::path::Path::new(CONFIRM_FILE).exists() {
+        return Ok(());
+    }
+
+    tmux::run(&["source-file", CONFIRM_FILE])?;
+    let _ = std::fs::remove_file(CONFIRM_FILE);
+    Ok(())
+}
+
+fn apply_pending_rename() -> Result<()> {
+    if !std::path::Path::new(RENAME_FILE).exists() {
+        return Ok(());
+    }
+
+    tmux::run(&["source-file", RENAME_FILE])?;
+    let _ = std::fs::remove_file(RENAME_FILE);
     Ok(())
 }

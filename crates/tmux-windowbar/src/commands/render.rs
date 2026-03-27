@@ -1,7 +1,7 @@
-use crate::config::template::{load_config, Config};
+use crate::config::template::{Config, load_config};
 use anyhow::Result;
 use tmux_fmt::tmux;
-use tmux_fmt::{click, label, Line};
+use tmux_fmt::{Line, click, label};
 
 /// Renders current session's window list for status-format[0]
 fn render_windows(config: &Config) -> Result<String> {
@@ -72,7 +72,9 @@ fn render_all_windows(config: &Config) -> Result<String> {
     let current_window = tmux::query_or(&["display-message", "-p", "#{window_index}"], "");
 
     let lines = tmux::lines(&[
-        "list-windows", "-a", "-F",
+        "list-windows",
+        "-a",
+        "-F",
         "#{session_name}:#{window_index}:#{window_name}",
     ])?;
 
@@ -83,7 +85,11 @@ fn render_all_windows(config: &Config) -> Result<String> {
 
         if !view_user.is_empty() {
             let is_user_session = sess == view_user;
-            let is_unowned = !sess.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false);
+            let is_unowned = !sess
+                .chars()
+                .next()
+                .map(|c| c.is_alphabetic())
+                .unwrap_or(false);
             let belongs_to_root = is_unowned && view_user == "root";
             if !is_user_session && !belongs_to_root {
                 continue;
@@ -122,7 +128,6 @@ fn render_all_windows(config: &Config) -> Result<String> {
     Ok(parts.join(" "))
 }
 
-
 /// Renders panes for status-format
 fn render_panes(config: &Config) -> Result<String> {
     let w = &config.window;
@@ -133,7 +138,9 @@ fn render_panes(config: &Config) -> Result<String> {
     let current_pane = tmux::query_or(&["display-message", "-p", "#{pane_index}"], "");
 
     let lines = tmux::lines(&[
-        "list-panes", "-a", "-F",
+        "list-panes",
+        "-a",
+        "-F",
         "#{session_name}:#{window_index}:#{pane_index}:#{pane_current_command}",
     ])?;
 
@@ -147,7 +154,11 @@ fn render_panes(config: &Config) -> Result<String> {
 
         if !view_user.is_empty() {
             let is_user_session = sess == view_user;
-            let is_unowned = !sess.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false);
+            let is_unowned = !sess
+                .chars()
+                .next()
+                .map(|c| c.is_alphabetic())
+                .unwrap_or(false);
             let belongs_to_root = is_unowned && view_user == "root";
             if !is_user_session && !belongs_to_root {
                 continue;
@@ -158,7 +169,10 @@ fn render_panes(config: &Config) -> Result<String> {
         let range_id = format!("_pp{sess}.{win}.{pane}");
         let display = format!(" {sess}.{win}.{pane}:{cmd} ");
 
-        let is_idle = matches!(cmd, "bash" | "zsh" | "fish" | "sh" | "dash" | "ksh" | "csh" | "tcsh");
+        let is_idle = matches!(
+            cmd,
+            "bash" | "zsh" | "fish" | "sh" | "dash" | "ksh" | "csh" | "tcsh"
+        );
 
         let block = if is_active {
             click(&range_id, &w.active_fg, &w.active_bg, true, &display)
@@ -213,15 +227,26 @@ pub fn render_view_switcher() -> String {
     for (id, emoji, color) in &modes {
         let mode_name = id.strip_prefix("_v").unwrap_or(id).to_lowercase();
         if mode == mode_name {
-            parts.push(click(id, &th.view_active_fg, color, true, &format!(" {emoji} ")));
+            parts.push(click(
+                id,
+                &th.view_active_fg,
+                color,
+                true,
+                &format!(" {emoji} "),
+            ));
         } else {
-            parts.push(click(id, &th.view_inactive_fg, &th.view_inactive_bg, false, &format!(" {emoji} ")));
+            parts.push(click(
+                id,
+                &th.view_inactive_fg,
+                &th.view_inactive_bg,
+                false,
+                &format!(" {emoji} "),
+            ));
         }
     }
 
     parts.join("")
 }
-
 
 pub fn run() -> Result<()> {
     if !tmux::acquire_guard("windowbar_render", 100) {
@@ -252,31 +277,57 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
     let mut users: Vec<&str> = Vec::new();
     for line in passwd.lines() {
         let fields: Vec<&str> = line.split(':').collect();
-        if fields.len() < 7 { continue; }
+        if fields.len() < 7 {
+            continue;
+        }
         let name = fields[0];
         let uid: u32 = fields[2].parse().unwrap_or(0);
         let shell = fields[6];
-        if shell.contains("nologin") || shell.contains("/false") { continue; }
-        if uid == 0 || uid >= 1000 { users.push(name); }
+        if shell.contains("nologin") || shell.contains("/false") {
+            continue;
+        }
+        if uid == 0 || uid >= 1000 {
+            users.push(name);
+        }
     }
 
-    let active_sessions = tmux::lines(&["list-sessions", "-F", "#{session_name}"])
-        .unwrap_or_default();
+    let active_sessions =
+        tmux::lines(&["list-sessions", "-F", "#{session_name}"]).unwrap_or_default();
 
     let mut parts = Vec::new();
     for user in &users {
         let range_id = format!("_u{user}");
-        if range_id.len() > 15 { continue; }
+        if range_id.len() > 15 {
+            continue;
+        }
         let has_session = active_sessions.iter().any(|s| s == user);
 
         let is_viewed = !view_user.is_empty() && *user == view_user;
 
         let block = if is_viewed {
-            click(&range_id, &th.user_viewed_fg, &th.user_viewed_bg, true, &format!(" 👤 {user} "))
+            click(
+                &range_id,
+                &th.user_viewed_fg,
+                &th.user_viewed_bg,
+                true,
+                &format!(" 👤 {user} "),
+            )
         } else if *user == current_user {
-            click(&range_id, &w.active_fg, &w.active_bg, true, &format!(" 👤 {user} "))
+            click(
+                &range_id,
+                &w.active_fg,
+                &w.active_bg,
+                true,
+                &format!(" 👤 {user} "),
+            )
         } else if has_session {
-            click(&range_id, &th.user_session_fg, &th.user_session_bg, false, &format!(" 👤 {user} "))
+            click(
+                &range_id,
+                &th.user_session_fg,
+                &th.user_session_bg,
+                false,
+                &format!(" 👤 {user} "),
+            )
         } else {
             click(&range_id, &w.fg, &w.bg, false, &format!(" 👤 {user} "))
         };

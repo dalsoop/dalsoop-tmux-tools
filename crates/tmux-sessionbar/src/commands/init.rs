@@ -17,8 +17,6 @@ pub fn run() -> Result<()> {
     ensure_tmux_tmpdir();
     ensure_in_path("tmux-sessionbar");
     ensure_in_path("tmux-windowbar");
-    ensure_in_path("tmux-click-handler");
-    ensure_in_path("tmux-dblclick-handler");
 
     // 1. Backup existing .tmux.conf
     if tmux_conf_path.exists() {
@@ -56,7 +54,9 @@ pub fn run() -> Result<()> {
         println!("[4/7] installing TPM...");
         let output = Command::new("git")
             .args([
-                "clone", "--depth", "1",
+                "clone",
+                "--depth",
+                "1",
                 "https://github.com/tmux-plugins/tpm",
                 &tpm_dir.to_string_lossy(),
             ])
@@ -65,7 +65,10 @@ pub fn run() -> Result<()> {
         if output.status.success() {
             println!("[4/7] TPM installed");
         } else {
-            eprintln!("[4/7] TPM install failed: {}", String::from_utf8_lossy(&output.stderr));
+            eprintln!(
+                "[4/7] TPM install failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
     } else {
         println!("[4/7] TPM already installed");
@@ -76,9 +79,7 @@ pub fn run() -> Result<()> {
     fs::create_dir_all(&wb_config_dir)?;
     let wb_config_path = wb_config_dir.join("config.toml");
     if !wb_config_path.exists() {
-        let wb_result = Command::new("tmux-windowbar")
-            .args(["init"])
-            .output();
+        let wb_result = Command::new("tmux-windowbar").args(["init"]).output();
         match wb_result {
             Ok(o) if o.status.success() => println!("[5/7] windowbar initialized"),
             _ => println!("[5/7] windowbar init skipped (binary not found or tmux not running)"),
@@ -95,9 +96,7 @@ pub fn run() -> Result<()> {
     match reload {
         Ok(s) if s.success() => {
             println!("[6/7] tmux config reloaded");
-            let _ = Command::new("tmux-windowbar")
-                .args(["apply"])
-                .status();
+            let _ = Command::new("tmux-windowbar").args(["apply"]).status();
         }
         _ => println!("[6/7] tmux not running — will apply on next start"),
     }
@@ -123,7 +122,9 @@ pub fn run() -> Result<()> {
             println!("[7/7] {count} plugins installed");
         }
     } else {
-        println!("[7/7] skipped plugin install (TPM not ready, run `tmux-sessionbar plugin-install` later)");
+        println!(
+            "[7/7] skipped plugin install (TPM not ready, run `tmux-sessionbar plugin-install` later)"
+        );
     }
 
     println!("\n=== done ===");
@@ -138,7 +139,9 @@ fn home_dir() -> PathBuf {
 }
 
 fn ensure_tmux_tmpdir() {
-    let uid = Command::new("id").args(["-u"]).output()
+    let uid = Command::new("id")
+        .args(["-u"])
+        .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|_| "0".into());
     let dir = format!("/tmp/tmux-{uid}");

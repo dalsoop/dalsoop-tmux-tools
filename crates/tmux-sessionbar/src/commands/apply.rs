@@ -1,6 +1,6 @@
 use crate::config::template;
 use crate::config::tmux_conf;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -44,9 +44,7 @@ pub fn run() -> Result<()> {
     match reload {
         Ok(s) if s.success() => {
             println!("tmux config reloaded");
-            let _ = Command::new("tmux-windowbar")
-                .args(["apply"])
-                .status();
+            let _ = Command::new("tmux-windowbar").args(["apply"]).status();
         }
         _ => println!("tmux not running — config will apply on next start"),
     }

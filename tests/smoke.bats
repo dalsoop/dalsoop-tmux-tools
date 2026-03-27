@@ -223,21 +223,24 @@ teardown_file() {
 
 # --- Click handler race fix ---
 
-@test "click handler sources confirm file directly" {
-    run cat /usr/local/bin/tmux-click-handler
+@test "sessionbar click sources confirm file directly" {
+    run rg -n "source-file.*tmux-pending-confirm.conf" \
+        "$BATS_TEST_DIRNAME/../crates/tmux-sessionbar/src/commands/click.rs" \
+        "$BATS_TEST_DIRNAME/../crates/tmux-windowbar/src/commands/click.rs"
     assert_success
-    assert_output --partial "tmux source-file /tmp/tmux-pending-confirm.conf"
+    assert_output --partial "source-file"
 }
 
-@test "dblclick handler sources rename file directly" {
-    run cat /usr/local/bin/tmux-dblclick-handler
+@test "dblclick sources rename file directly" {
+    run rg -n "source-file.*tmux-pending-rename.conf" \
+        "$BATS_TEST_DIRNAME/../crates/tmux-windowbar/src/commands/click.rs"
     assert_success
-    assert_output --partial "tmux source-file /tmp/tmux-pending-rename.conf"
+    assert_output --partial "source-file"
 }
 
 @test "MouseDown1Status uses run-shell directly (no if-shell race)" {
     run _tmux list-keys
-    assert_output --partial "tmux-click-handler"
+    assert_output --partial 'tmux-windowbar click "#{mouse_status_range}"'
     refute_output --partial "if-shell.*pending-confirm"
 }
 
@@ -290,6 +293,7 @@ teardown_file() {
 @test "double-click binding is set" {
     run _tmux list-keys
     assert_output --partial "DoubleClick1Status"
+    assert_output --partial 'tmux-windowbar dblclick "#{mouse_status_range}"'
 }
 
 # --- Pane clear ---

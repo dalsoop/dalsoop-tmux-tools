@@ -125,37 +125,99 @@ pub struct WindowConfig {
     pub idle_bg: String,
 }
 
-fn default_true() -> bool { true }
-fn default_fg() -> String { "#abb2bf".into() }
-fn default_bg() -> String { "#282c34".into() }
-fn default_active_fg() -> String { "#282c34".into() }
-fn default_active_bg() -> String { "#98c379".into() }
-fn default_kill_fg() -> String { "#e06c75".into() }
-fn default_kill_bg() -> String { "#282c34".into() }
-fn default_button_fg() -> String { "#282c34".into() }
-fn default_button_bg() -> String { "#61afef".into() }
-fn default_running_fg() -> String { "#282c34".into() }
-fn default_running_bg() -> String { "#56b6c2".into() }
-fn default_idle_fg() -> String { "#5c6370".into() }
-fn default_idle_bg() -> String { "#2c323c".into() }
-fn default_app_fg() -> String { "#282c34".into() }
-fn default_app_bg() -> String { "#61afef".into() }
-fn default_app_mode() -> String { "window".into() }
-fn default_users_label() -> String { "#56b6c2".into() }
-fn default_windows_label() -> String { "#c678dd".into() }
-fn default_panes_label() -> String { "#e5c07b".into() }
-fn default_apps_label() -> String { "#e06c75".into() }
-fn default_view_all() -> String { "#98c379".into() }
-fn default_view_user() -> String { "#61afef".into() }
-fn default_view_session() -> String { "#c678dd".into() }
-fn default_view_compact() -> String { "#e5c07b".into() }
-fn default_view_active_fg() -> String { "#282c34".into() }
-fn default_view_inactive_fg() -> String { "#abb2bf".into() }
-fn default_view_inactive_bg() -> String { "#3e4452".into() }
-fn default_user_viewed_fg() -> String { "#282c34".into() }
-fn default_user_viewed_bg() -> String { "#e5c07b".into() }
-fn default_user_session_fg() -> String { "#282c34".into() }
-fn default_user_session_bg() -> String { "#56b6c2".into() }
+fn default_true() -> bool {
+    true
+}
+fn default_fg() -> String {
+    "#abb2bf".into()
+}
+fn default_bg() -> String {
+    "#282c34".into()
+}
+fn default_active_fg() -> String {
+    "#282c34".into()
+}
+fn default_active_bg() -> String {
+    "#98c379".into()
+}
+fn default_kill_fg() -> String {
+    "#e06c75".into()
+}
+fn default_kill_bg() -> String {
+    "#282c34".into()
+}
+fn default_button_fg() -> String {
+    "#282c34".into()
+}
+fn default_button_bg() -> String {
+    "#61afef".into()
+}
+fn default_running_fg() -> String {
+    "#282c34".into()
+}
+fn default_running_bg() -> String {
+    "#56b6c2".into()
+}
+fn default_idle_fg() -> String {
+    "#5c6370".into()
+}
+fn default_idle_bg() -> String {
+    "#2c323c".into()
+}
+fn default_app_fg() -> String {
+    "#282c34".into()
+}
+fn default_app_bg() -> String {
+    "#61afef".into()
+}
+fn default_app_mode() -> String {
+    "window".into()
+}
+fn default_users_label() -> String {
+    "#56b6c2".into()
+}
+fn default_windows_label() -> String {
+    "#c678dd".into()
+}
+fn default_panes_label() -> String {
+    "#e5c07b".into()
+}
+fn default_apps_label() -> String {
+    "#e06c75".into()
+}
+fn default_view_all() -> String {
+    "#98c379".into()
+}
+fn default_view_user() -> String {
+    "#61afef".into()
+}
+fn default_view_session() -> String {
+    "#c678dd".into()
+}
+fn default_view_compact() -> String {
+    "#e5c07b".into()
+}
+fn default_view_active_fg() -> String {
+    "#282c34".into()
+}
+fn default_view_inactive_fg() -> String {
+    "#abb2bf".into()
+}
+fn default_view_inactive_bg() -> String {
+    "#3e4452".into()
+}
+fn default_user_viewed_fg() -> String {
+    "#282c34".into()
+}
+fn default_user_viewed_bg() -> String {
+    "#e5c07b".into()
+}
+fn default_user_session_fg() -> String {
+    "#282c34".into()
+}
+fn default_user_session_bg() -> String {
+    "#56b6c2".into()
+}
 
 pub fn config_dir() -> PathBuf {
     home_dir().join(CONFIG_DIR)
@@ -171,16 +233,76 @@ fn home_dir() -> PathBuf {
 
 pub fn default_config() -> Config {
     let mut colors = HashMap::new();
-    colors.insert("spf".into(), ColorEntry { fg: "#282c34".into(), bg: "#c678dd".into() });
-    colors.insert("claude".into(), ColorEntry { fg: "#282c34".into(), bg: "#61afef".into() });
-    colors.insert("vim".into(), ColorEntry { fg: "#282c34".into(), bg: "#e06c75".into() });
-    colors.insert("nvim".into(), ColorEntry { fg: "#282c34".into(), bg: "#e06c75".into() });
-    colors.insert("node".into(), ColorEntry { fg: "#282c34".into(), bg: "#98c379".into() });
-    colors.insert("python".into(), ColorEntry { fg: "#282c34".into(), bg: "#e5c07b".into() });
-    colors.insert("python3".into(), ColorEntry { fg: "#282c34".into(), bg: "#e5c07b".into() });
-    colors.insert("htop".into(), ColorEntry { fg: "#282c34".into(), bg: "#d19a66".into() });
-    colors.insert("codex".into(), ColorEntry { fg: "#282c34".into(), bg: "#98c379".into() });
-    colors.insert("veilkey".into(), ColorEntry { fg: "#282c34".into(), bg: "#98c379".into() });
+    colors.insert(
+        "spf".into(),
+        ColorEntry {
+            fg: "#282c34".into(),
+            bg: "#c678dd".into(),
+        },
+    );
+    colors.insert(
+        "claude".into(),
+        ColorEntry {
+            fg: "#282c34".into(),
+            bg: "#61afef".into(),
+        },
+    );
+    colors.insert(
+        "vim".into(),
+        ColorEntry {
+            fg: "#282c34".into(),
+            bg: "#e06c75".into(),
+        },
+    );
+    colors.insert(
+        "nvim".into(),
+        ColorEntry {
+            fg: "#282c34".into(),
+            bg: "#e06c75".into(),
+        },
+    );
+    colors.insert(
+        "node".into(),
+        ColorEntry {
+            fg: "#282c34".into(),
+            bg: "#98c379".into(),
+        },
+    );
+    colors.insert(
+        "python".into(),
+        ColorEntry {
+            fg: "#282c34".into(),
+            bg: "#e5c07b".into(),
+        },
+    );
+    colors.insert(
+        "python3".into(),
+        ColorEntry {
+            fg: "#282c34".into(),
+            bg: "#e5c07b".into(),
+        },
+    );
+    colors.insert(
+        "htop".into(),
+        ColorEntry {
+            fg: "#282c34".into(),
+            bg: "#d19a66".into(),
+        },
+    );
+    colors.insert(
+        "codex".into(),
+        ColorEntry {
+            fg: "#282c34".into(),
+            bg: "#98c379".into(),
+        },
+    );
+    colors.insert(
+        "veilkey".into(),
+        ColorEntry {
+            fg: "#282c34".into(),
+            bg: "#98c379".into(),
+        },
+    );
 
     let apps = vec![
         AppEntry {

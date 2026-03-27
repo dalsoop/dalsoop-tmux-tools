@@ -26,11 +26,14 @@ pub fn list() -> Result<()> {
             .filter(|n| n != "tpm")
             .collect();
 
-        let config_names: Vec<String> = config.plugins.iter()
+        let config_names: Vec<String> = config
+            .plugins
+            .iter()
             .map(|p| p.name.split('/').next_back().unwrap_or("").to_string())
             .collect();
 
-        let orphans: Vec<&String> = installed.iter()
+        let orphans: Vec<&String> = installed
+            .iter()
             .filter(|i| !config_names.contains(i))
             .collect();
 
@@ -118,7 +121,9 @@ fn apply_and_install() -> Result<()> {
             }
         }
     } else {
-        println!("TPM not found. Install: git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm");
+        println!(
+            "TPM not found. Install: git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm"
+        );
     }
 
     Ok(())

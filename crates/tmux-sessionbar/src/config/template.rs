@@ -207,52 +207,144 @@ impl Default for DatetimeBlock {
     }
 }
 
-fn default_interval() -> u32 { 2 }
-fn default_position() -> String { "top".into() }
-fn default_bg() -> String { "#282c34".into() }
-fn default_fg() -> String { "#abb2bf".into() }
-fn default_length() -> u32 { 120 }
-fn default_active_fg() -> String { "#282c34".into() }
-fn default_active_bg() -> String { "#98c379".into() }
-fn default_inactive_fg() -> String { "#abb2bf".into() }
-fn default_inactive_bg() -> String { "#3e4452".into() }
-fn default_separator() -> String { " ".into() }
-fn default_block_fg() -> String { "#282c34".into() }
-fn default_hostname_bg() -> String { "#61afef".into() }
-fn default_hostname_format() -> String { " #H ".into() }
-fn default_datetime_bg() -> String { "#c678dd".into() }
-fn default_datetime_format() -> String { " %H:%M ".into() }
-fn default_true() -> bool { true }
-fn default_history_limit() -> u32 { 5000 }
-fn default_clear_interval() -> u32 { 30 }
-fn default_button_fg() -> String { "#282c34".into() }
-fn default_button_bg() -> String { "#61afef".into() }
-fn default_kill_fg() -> String { "#e06c75".into() }
-fn default_label_fg() -> String { "#98c379".into() }
-fn default_clear_bg() -> String { "#e5c07b".into() }
-fn default_stats_fg() -> String { "#abb2bf".into() }
-fn default_stats_bg() -> String { "#3e4452".into() }
-fn default_mem_fg() -> String { "#282c34".into() }
-fn default_mem_normal() -> String { "#98c379".into() }
-fn default_mem_warn() -> String { "#e5c07b".into() }
-fn default_mem_critical() -> String { "#e06c75".into() }
+fn default_interval() -> u32 {
+    2
+}
+fn default_position() -> String {
+    "top".into()
+}
+fn default_bg() -> String {
+    "#282c34".into()
+}
+fn default_fg() -> String {
+    "#abb2bf".into()
+}
+fn default_length() -> u32 {
+    120
+}
+fn default_active_fg() -> String {
+    "#282c34".into()
+}
+fn default_active_bg() -> String {
+    "#98c379".into()
+}
+fn default_inactive_fg() -> String {
+    "#abb2bf".into()
+}
+fn default_inactive_bg() -> String {
+    "#3e4452".into()
+}
+fn default_separator() -> String {
+    " ".into()
+}
+fn default_block_fg() -> String {
+    "#282c34".into()
+}
+fn default_hostname_bg() -> String {
+    "#61afef".into()
+}
+fn default_hostname_format() -> String {
+    " #H ".into()
+}
+fn default_datetime_bg() -> String {
+    "#c678dd".into()
+}
+fn default_datetime_format() -> String {
+    " %H:%M ".into()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_history_limit() -> u32 {
+    5000
+}
+fn default_clear_interval() -> u32 {
+    30
+}
+fn default_button_fg() -> String {
+    "#282c34".into()
+}
+fn default_button_bg() -> String {
+    "#61afef".into()
+}
+fn default_kill_fg() -> String {
+    "#e06c75".into()
+}
+fn default_label_fg() -> String {
+    "#98c379".into()
+}
+fn default_clear_bg() -> String {
+    "#e5c07b".into()
+}
+fn default_stats_fg() -> String {
+    "#abb2bf".into()
+}
+fn default_stats_bg() -> String {
+    "#3e4452".into()
+}
+fn default_mem_fg() -> String {
+    "#282c34".into()
+}
+fn default_mem_normal() -> String {
+    "#98c379".into()
+}
+fn default_mem_warn() -> String {
+    "#e5c07b".into()
+}
+fn default_mem_critical() -> String {
+    "#e06c75".into()
+}
 
 fn default_plugins() -> Vec<PluginEntry> {
     vec![
-        PluginEntry { name: "tmux-plugins/tmux-resurrect".into(), enabled: Some(true), options: vec![
-            "@resurrect-capture-pane-contents 'on'".into(),
-        ]},
-        PluginEntry { name: "tmux-plugins/tmux-continuum".into(), enabled: Some(true), options: vec![
-            "@continuum-restore 'on'".into(),
-            "@continuum-save-interval '15'".into(),
-        ]},
-        PluginEntry { name: "tmux-plugins/tmux-yank".into(), enabled: Some(true), options: vec![] },
-        PluginEntry { name: "fcsonline/tmux-thumbs".into(), enabled: Some(true), options: vec![] },
-        PluginEntry { name: "tmux-plugins/tmux-open".into(), enabled: Some(true), options: vec![] },
-        PluginEntry { name: "tmux-plugins/tmux-logging".into(), enabled: Some(true), options: vec![] },
-        PluginEntry { name: "tmux-plugins/tmux-sensible".into(), enabled: Some(true), options: vec![] },
-        PluginEntry { name: "rickstaa/tmux-notify".into(), enabled: Some(true), options: vec![] },
-        PluginEntry { name: "jaclu/tmux-menus".into(), enabled: Some(true), options: vec![] },
+        PluginEntry {
+            name: "tmux-plugins/tmux-resurrect".into(),
+            enabled: Some(true),
+            options: vec!["@resurrect-capture-pane-contents 'on'".into()],
+        },
+        PluginEntry {
+            name: "tmux-plugins/tmux-continuum".into(),
+            enabled: Some(true),
+            options: vec![
+                "@continuum-restore 'on'".into(),
+                "@continuum-save-interval '15'".into(),
+            ],
+        },
+        PluginEntry {
+            name: "tmux-plugins/tmux-yank".into(),
+            enabled: Some(true),
+            options: vec![],
+        },
+        PluginEntry {
+            name: "fcsonline/tmux-thumbs".into(),
+            enabled: Some(true),
+            options: vec![],
+        },
+        PluginEntry {
+            name: "tmux-plugins/tmux-open".into(),
+            enabled: Some(true),
+            options: vec![],
+        },
+        PluginEntry {
+            name: "tmux-plugins/tmux-logging".into(),
+            enabled: Some(true),
+            options: vec![],
+        },
+        PluginEntry {
+            name: "tmux-plugins/tmux-sensible".into(),
+            enabled: Some(true),
+            options: vec![],
+        },
+        PluginEntry {
+            name: "rickstaa/tmux-notify".into(),
+            enabled: Some(true),
+            options: vec![],
+        },
+        PluginEntry {
+            name: "jaclu/tmux-menus".into(),
+            enabled: Some(true),
+            options: vec![],
+        },
     ]
 }
 

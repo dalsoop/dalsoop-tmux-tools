@@ -31,7 +31,7 @@ tmux-sessionbar plugin-install    # Reinstall all plugins
 
 - `status-format[1]` is set directly with session blocks wrapped in `#[range=user|name]`
 - tmux hooks (`client-session-changed`, `session-created`, etc.) trigger re-render
-- Mouse clicks handled by `tmux-click-handler` script with confirm-before for kills
+- Mouse clicks handled directly by `tmux-windowbar`/`tmux-sessionbar` bindings with confirm-before for kills
 - CPU/memory stats read from `/proc/loadavg` and `/proc/meminfo`
 - Plugins managed as `[[plugins]]` entries in `config.toml`
 - 🧹 clear button and `Alt+k` keybinding to clear pane screen + scrollback

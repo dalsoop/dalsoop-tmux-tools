@@ -1,7 +1,7 @@
 use crate::config::template::load_config;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use tmux_fmt::tmux;
-use tmux_fmt::{click, fallback_window_list, label, styled, Line};
+use tmux_fmt::{Line, click, fallback_window_list, label, styled};
 
 pub fn run(segment: &str) -> Result<()> {
     match segment {
@@ -29,16 +29,32 @@ fn render_left() -> Result<()> {
     for name in &sessions {
         if !view_user.is_empty() {
             let is_user_session = name == &view_user;
-            let is_unowned = !name.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false);
+            let is_unowned = !name
+                .chars()
+                .next()
+                .map(|c| c.is_alphabetic())
+                .unwrap_or(false);
             let belongs_to_root = is_unowned && view_user == "root";
             if !is_user_session && !belongs_to_root {
                 continue;
             }
         }
         let mut block = if *name == current {
-            click(name, &sl.active_fg, &sl.active_bg, true, &format!(" {name} "))
+            click(
+                name,
+                &sl.active_fg,
+                &sl.active_bg,
+                true,
+                &format!(" {name} "),
+            )
         } else {
-            click(name, &sl.inactive_fg, &sl.inactive_bg, false, &format!(" {name} "))
+            click(
+                name,
+                &sl.inactive_fg,
+                &sl.inactive_bg,
+                false,
+                &format!(" {name} "),
+            )
         };
 
         if sl.show_kill_button && *name != current {
@@ -145,14 +161,28 @@ fn get_system_stats(th: &ThemeConfig) -> String {
     let mut avail_kb = 0u64;
     for line in meminfo.lines() {
         if line.starts_with("MemTotal:") {
-            total_kb = line.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+            total_kb = line
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("0")
+                .parse()
+                .unwrap_or(0);
         } else if line.starts_with("MemAvailable:") {
-            avail_kb = line.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+            avail_kb = line
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("0")
+                .parse()
+                .unwrap_or(0);
         }
     }
     let used_gb = (total_kb - avail_kb) as f64 / 1048576.0;
     let total_gb = total_kb as f64 / 1048576.0;
-    let mem_pct = if total_kb > 0 { (total_kb - avail_kb) * 100 / total_kb } else { 0 };
+    let mem_pct = if total_kb > 0 {
+        (total_kb - avail_kb) * 100 / total_kb
+    } else {
+        0
+    };
 
     let mem_color = if mem_pct > 80 {
         &th.mem_critical
@@ -165,6 +195,10 @@ fn get_system_stats(th: &ThemeConfig) -> String {
     format!(
         "{}{}",
         styled(&th.stats_fg, &th.stats_bg, &format!(" {cpu_load} ")),
-        styled(&th.mem_fg, mem_color, &format!(" {used_gb:.1}/{total_gb:.0}G ")),
+        styled(
+            &th.mem_fg,
+            mem_color,
+            &format!(" {used_gb:.1}/{total_gb:.0}G ")
+        ),
     )
 }
