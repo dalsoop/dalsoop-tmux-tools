@@ -24,7 +24,7 @@ tmux-windowbar layout-list        # List saved layouts
 | 0 | Users — system accounts, click to switch + filter |
 | 2 | Windows — all windows across sessions with [x][+] |
 | 3 | Panes — all panes with status colors, [x], [|], [-] |
-| 4 | Apps — clickable app launcher |
+| 4 | Apps — clickable app launcher (default: split into pane) |
 
 ## Pane Colors
 
@@ -50,4 +50,4 @@ tmux-windowbar layout-list        # List saved layouts
 | `_splitv` | Split vertical |
 | `_u<user>` | Switch to user session + filter view |
 | `_v<mode>` | Change view mode |
-| `_app<idx>` | Launch app |
+| `_app<idx>` | Launch app (pane by default, window if configured) |

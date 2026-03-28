@@ -9,7 +9,7 @@ Users     👤 root  👤 jeonghan  👤 dalroot-dns  👤 dalroot-ops ...
 Sessions  0  1 x  2  [+]  1:claude  2:bash x  [+]   0.5 3.2/32G  pve 00:15  🌐👤📋⚡
 Windows   0.0:bash  0.1:vim x  1.0:claude x ...
 Panes     2.1.0:bash  2.1.1:claude x  | -
-Apps      🔐 spf  🤖 claude  🧠 codex  📊 htop  🐍 python3  🖥️ bash
+Apps      🔐 spf  🤖 claude  🧠 codex  📊 htop  📝 mdnvim  📂 lazygit  🖥️ bash
 ```
 
 ## Features
@@ -23,7 +23,7 @@ Apps      🔐 spf  🤖 claude  🧠 codex  📊 htop  🐍 python3  🖥️ ba
 - **View filtering** — click a user to filter Sessions/Windows/Panes to their data only
 - **Pane status colors** — idle (gray), running (cyan), custom per-command via `config.toml`
 - **Pane split buttons** — `[|]` horizontal, `[-]` vertical split
-- **App launcher** — click to launch spf, claude, codex, htop, python3, bash in new window
+- **App launcher** — click to launch spf, claude, codex, htop, mdnvim, lazygit, bash in a new pane
 - **CPU/Memory monitor** — load average + color-coded memory usage on Sessions line
 - **Layout save/restore** — save and reload window/pane layouts
 - **Double-click rename** — double-click session or window block to rename
@@ -224,11 +224,11 @@ bg = "#c678dd"
 
 # App launcher entries
 [[apps]]
-emoji = "🔐"
-command = "spf"
+emoji = "📝"
+command = "mdnvim"
 fg = "#282c34"
-bg = "#c678dd"
-mode = "window"  # "window" or "pane"
+bg = "#e06c75"
+mode = "pane"  # "window" or "pane"
 ```
 
 ## Key Bindings
@@ -243,7 +243,7 @@ mode = "window"  # "window" or "pane"
 | Click [|] | Split pane horizontally |
 | Click [-] | Split pane vertically |
 | Click user | Switch to user session + filter view |
-| Click app | Launch in new window |
+| Click app | Launch in new pane |
 | Click 🌐 | Show all (clear user filter) |
 | Click 🧹 | Clear current pane scrollback |
 | Double-click session/window | Rename |
