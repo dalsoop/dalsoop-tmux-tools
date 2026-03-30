@@ -921,24 +921,49 @@ fn render_standard_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
 fn render_proxmox_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
     let breadcrumb = app.pve_breadcrumb();
 
+    // Depth 1: split area for host info (top) + container list (bottom)
+    if app.pve_depth == 1 {
+        let host_height = if app.pve_host_info.is_some() { 6u16 } else { 0u16 };
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(host_height), Constraint::Min(0)])
+            .split(area);
+
+        // Host info paragraph (non-selectable)
+        if let Some(hi) = &app.pve_host_info {
+            let lines = proxmox::display_host_info(hi);
+            let para = Paragraph::new(lines)
+                .style(Style::default().fg(FG).bg(BG))
+                .block(Block::default()
+                    .title(Span::styled(format!(" {breadcrumb} "), Style::default().fg(GREEN)))
+                    .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(BORDER))
+                    .style(Style::default().bg(BG)));
+            f.render_widget(para, chunks[0]);
+        }
+
+        // Container list (selectable)
+        let items: Vec<ListItem> = app.pve_containers.iter()
+            .map(|c| ListItem::new(proxmox::display_container(c)))
+            .collect();
+        let list = List::new(items)
+            .block(Block::default()
+                .borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(BORDER))
+                .style(Style::default().bg(BG)))
+            .style(Style::default().fg(FG).bg(BG))
+            .highlight_style(Style::default().fg(BLUE).bg(Color::Rgb(58, 63, 76)).add_modifier(Modifier::BOLD))
+            .highlight_symbol("> ");
+        f.render_stateful_widget(list, chunks[1], &mut app.pve_list.state);
+        return;
+    }
+
     let items: Vec<ListItem> = match app.pve_depth {
         0 => app.pve_servers.iter()
             .map(|s| ListItem::new(proxmox::display_server(s)))
             .collect(),
-        1 => {
-            let mut items: Vec<ListItem> = Vec::new();
-            // Host info header
-            if let Some(hi) = &app.pve_host_info {
-                for line in proxmox::display_host_info(hi) {
-                    items.push(ListItem::new(line));
-                }
-            }
-            // Container list
-            for c in &app.pve_containers {
-                items.push(ListItem::new(proxmox::display_container(c)));
-            }
-            items
-        }
         _ => {
             if let Some(detail) = &app.pve_detail {
                 proxmox::display_detail(detail).into_iter()
