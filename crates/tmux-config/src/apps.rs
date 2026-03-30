@@ -1,147 +1,141 @@
-use anyhow::Result;
-use dialoguer::{Input, Select, theme::ColorfulTheme};
-use tmux_windowbar::config::template::{AppEntry, load_config};
+use tmux_windowbar::config::template::{AppEntry, Config};
 
-use crate::save_and_apply;
+use crate::form::{Field, Form};
 
-pub fn manage() -> Result<()> {
-    loop {
-        let config = load_config()?;
+/// Build form fields for adding a new app entry.
+pub fn add_form() -> Form {
+    Form::new(
+        vec![
+            Field { label: "Emoji", value: String::new() },
+            Field { label: "Command", value: String::new() },
+            Field { label: "Mode (window/pane)", value: "window".into() },
+            Field { label: "FG color", value: "#282c34".into() },
+            Field { label: "BG color", value: "#61afef".into() },
+        ],
+        None,
+    )
+}
 
-        let mut items: Vec<String> = config.apps.iter().map(|a| {
-            format!("{} {} [{}]", a.emoji, a.command, a.mode)
-        }).collect();
-        items.push("+ Add new".into());
-        items.push("<- Back".into());
+/// Build form fields pre-filled from an existing app entry.
+pub fn edit_form(config: &Config, idx: usize) -> Form {
+    let a = &config.apps[idx];
+    Form::new(
+        vec![
+            Field { label: "Emoji", value: a.emoji.clone() },
+            Field { label: "Command", value: a.command.clone() },
+            Field { label: "Mode (window/pane)", value: a.mode.clone() },
+            Field { label: "FG color", value: a.fg.clone() },
+            Field { label: "BG color", value: a.bg.clone() },
+        ],
+        Some(idx),
+    )
+}
 
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Apps")
-            .items(&items)
-            .default(0)
-            .interact()?;
+/// Apply a completed form to the config.
+pub fn apply_form(config: &mut Config, form: &Form) {
+    let values = form.values();
+    let emoji = values[0].to_owned();
+    let command = values[1].to_owned();
+    let mode = {
+        let raw = values[2].trim().to_lowercase();
+        if raw == "pane" { "pane".into() } else { "window".into() }
+    };
+    let fg = values[3].to_owned();
+    let bg = values[4].to_owned();
 
-        let apps_count = config.apps.len();
-        if selection == apps_count {
-            add()?;
-        } else if selection == apps_count + 1 {
-            break;
-        } else {
-            detail(selection)?;
+    match form.edit_idx {
+        None => {
+            config.apps.push(AppEntry { emoji, command, mode, fg, bg });
+        }
+        Some(idx) => {
+            let a = &mut config.apps[idx];
+            a.emoji = emoji;
+            a.command = command;
+            a.mode = mode;
+            a.fg = fg;
+            a.bg = bg;
         }
     }
-    Ok(())
 }
 
-fn detail(idx: usize) -> Result<()> {
-    let config = load_config()?;
-    let app = &config.apps[idx];
-    println!("  {} {} [{}] fg={} bg={}", app.emoji, app.command, app.mode, app.fg, app.bg);
-
-    let actions = &["Edit", "Delete", "Back"];
-    let action = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Action")
-        .items(actions)
-        .default(0)
-        .interact()?;
-
-    match action {
-        0 => edit(idx)?,
-        1 => delete(idx)?,
-        _ => {}
-    }
-    Ok(())
+/// Format a single app entry for list display.
+pub fn display(a: &AppEntry) -> String {
+    format!("{} {}  [{}]  fg={} bg={}", a.emoji, a.command, a.mode, a.fg, a.bg)
 }
 
-fn add() -> Result<()> {
-    let theme = ColorfulTheme::default();
-    let emoji: String = Input::with_theme(&theme)
-        .with_prompt("Emoji")
-        .interact_text()?;
-    let command: String = Input::with_theme(&theme)
-        .with_prompt("Command")
-        .interact_text()?;
-
-    let mode_items = &["window", "pane"];
-    let mode_idx = Select::with_theme(&theme)
-        .with_prompt("Mode")
-        .items(mode_items)
-        .default(0)
-        .interact()?;
-    let mode = mode_items[mode_idx].to_string();
-
-    let fg: String = Input::with_theme(&theme)
-        .with_prompt("FG color")
-        .default("#282c34".into())
-        .interact_text()?;
-    let bg: String = Input::with_theme(&theme)
-        .with_prompt("BG color")
-        .default("#61afef".into())
-        .interact_text()?;
-
-    let mut config = load_config()?;
-    config.apps.push(AppEntry { emoji, command, mode, fg, bg });
-    save_and_apply(&config)?;
-    println!("Added");
-    Ok(())
-}
-
-fn edit(idx: usize) -> Result<()> {
-    let mut config = load_config()?;
-    let app = &config.apps[idx];
-    let theme = ColorfulTheme::default();
-
-    let emoji: String = Input::with_theme(&theme)
-        .with_prompt("Emoji")
-        .default(app.emoji.clone())
-        .interact_text()?;
-    let command: String = Input::with_theme(&theme)
-        .with_prompt("Command")
-        .default(app.command.clone())
-        .interact_text()?;
-
-    let mode_items = &["window", "pane"];
-    let current_mode = if app.mode == "pane" { 1 } else { 0 };
-    let mode_idx = Select::with_theme(&theme)
-        .with_prompt("Mode")
-        .items(mode_items)
-        .default(current_mode)
-        .interact()?;
-    let mode = mode_items[mode_idx].to_string();
-
-    let fg: String = Input::with_theme(&theme)
-        .with_prompt("FG color")
-        .default(app.fg.clone())
-        .interact_text()?;
-    let bg: String = Input::with_theme(&theme)
-        .with_prompt("BG color")
-        .default(app.bg.clone())
-        .interact_text()?;
-
-    let a = &mut config.apps[idx];
-    a.emoji = emoji;
-    a.command = command;
-    a.mode = mode;
-    a.fg = fg;
-    a.bg = bg;
-
-    save_and_apply(&config)?;
-    println!("Updated");
-    Ok(())
-}
-
-fn delete(idx: usize) -> Result<()> {
-    let mut config = load_config()?;
-    let command = config.apps[idx].command.clone();
-
-    let confirm = dialoguer::Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt(format!("Delete '{command}'?"))
-        .default(false)
-        .interact()?;
-
-    if confirm {
+/// Delete entry at idx.
+pub fn delete(config: &mut Config, idx: usize) {
+    if idx < config.apps.len() {
         config.apps.remove(idx);
-        save_and_apply(&config)?;
-        println!("Deleted '{command}'");
     }
-    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tmux_windowbar::config::template::default_config;
+
+    #[test]
+    fn add_form_has_five_fields() {
+        let f = add_form();
+        assert_eq!(f.fields.len(), 5);
+        assert_eq!(f.edit_idx, None);
+    }
+
+    #[test]
+    fn edit_form_prefills_values() {
+        let config = default_config();
+        let f = edit_form(&config, 0);
+        assert_eq!(f.fields[1].value, config.apps[0].command);
+        assert_eq!(f.edit_idx, Some(0));
+    }
+
+    #[test]
+    fn apply_form_adds_entry() {
+        let mut config = default_config();
+        let initial_count = config.apps.len();
+        let mut form = add_form();
+        form.fields[0].value = "\u{1f4e6}".into();
+        form.fields[1].value = "cargo".into();
+        form.fields[2].value = "pane".into();
+        form.fields[3].value = "#fff".into();
+        form.fields[4].value = "#000".into();
+        apply_form(&mut config, &form);
+        assert_eq!(config.apps.len(), initial_count + 1);
+        let added = config.apps.last().unwrap();
+        assert_eq!(added.command, "cargo");
+        assert_eq!(added.mode, "pane");
+    }
+
+    #[test]
+    fn apply_form_edits_entry() {
+        let mut config = default_config();
+        let original_cmd = config.apps[0].command.clone();
+        let mut form = edit_form(&config, 0);
+        form.fields[1].value = "newcmd".into();
+        apply_form(&mut config, &form);
+        assert_ne!(config.apps[0].command, original_cmd);
+        assert_eq!(config.apps[0].command, "newcmd");
+    }
+
+    #[test]
+    fn apply_form_defaults_unknown_mode_to_window() {
+        let mut config = default_config();
+        let mut form = add_form();
+        form.fields[0].value = "\u{1f4e6}".into();
+        form.fields[1].value = "foo".into();
+        form.fields[2].value = "unknown".into();
+        form.fields[3].value = "#fff".into();
+        form.fields[4].value = "#000".into();
+        apply_form(&mut config, &form);
+        assert_eq!(config.apps.last().unwrap().mode, "window");
+    }
+
+    #[test]
+    fn delete_removes_entry() {
+        let mut config = default_config();
+        let initial = config.apps.len();
+        delete(&mut config, 0);
+        assert_eq!(config.apps.len(), initial - 1);
+    }
 }
