@@ -368,6 +368,123 @@ impl App {
         self.pve_refresh();
     }
 
+    /// Get the currently selected docker container name (at depth 2).
+    fn pve_selected_docker(&self) -> Option<String> {
+        let detail = self.pve_detail.as_ref()?;
+        let sel = self.pve_list.selected()?;
+        // The detail view has header lines mixed in — need to map selection to docker index.
+        // Count through display_detail lines to find which docker container is selected.
+        let lines = proxmox::display_detail(detail);
+        if sel >= lines.len() { return None; }
+        // Find the docker container: look for lines with docker container names
+        let mut docker_idx: Option<usize> = None;
+        let mut current_docker = 0usize;
+        let mut in_docker_section = false;
+        for (i, _line) in lines.iter().enumerate() {
+            let text: String = _line.spans.iter().map(|s| s.content.to_string()).collect();
+            if text.contains("🐳 Docker") { in_docker_section = true; continue; }
+            if text.contains("🔌 Listening") { in_docker_section = false; }
+            if in_docker_section && !text.trim().starts_with("↳") && !text.contains("(none") && !text.trim().is_empty() {
+                if i == sel {
+                    docker_idx = Some(current_docker);
+                    break;
+                }
+                current_docker += 1;
+            }
+        }
+        docker_idx.and_then(|i| detail.docker.get(i).map(|d| d.name.clone()))
+    }
+
+    /// Open container system logs in tmux session.
+    fn pve_container_logs(&mut self) -> bool {
+        if self.pve_depth != 1 { return false; }
+        let idx = match self.pve_list.selected() { Some(i) => i, None => return false };
+        if idx >= self.pve_containers.len() { return false; }
+        let si = self.pve_sel_server.unwrap_or(0);
+        let server = &self.pve_servers[si];
+        let ct = &self.pve_containers[idx];
+        let cmd = match proxmox::container_logs_cmd(server, ct) {
+            Some(c) => c,
+            None => { self.status_msg = Some("Logs not available".into()); return false; }
+        };
+        let session = format!("log-{}", ct.vmid);
+        self.open_tmux_session(&session, &cmd)
+    }
+
+    /// Open docker container logs in tmux session.
+    fn pve_docker_logs(&mut self) -> bool {
+        let docker_name = match self.pve_selected_docker() {
+            Some(n) => n,
+            None => { self.status_msg = Some("Select a docker container".into()); return false; }
+        };
+        let si = self.pve_sel_server.unwrap_or(0);
+        let ci = self.pve_sel_ct.unwrap_or(0);
+        if si >= self.pve_servers.len() || ci >= self.pve_containers.len() { return false; }
+        let server = &self.pve_servers[si];
+        let vmid = self.pve_containers[ci].vmid;
+        let cmd = proxmox::docker_logs_cmd(server, vmid, &docker_name);
+        let session = format!("dlog-{}-{}", vmid, docker_name);
+        self.open_tmux_session(&session, &cmd)
+    }
+
+    /// Exec into docker container.
+    fn pve_docker_exec(&mut self) -> bool {
+        let docker_name = match self.pve_selected_docker() {
+            Some(n) => n,
+            None => { self.status_msg = Some("Select a docker container".into()); return false; }
+        };
+        let si = self.pve_sel_server.unwrap_or(0);
+        let ci = self.pve_sel_ct.unwrap_or(0);
+        if si >= self.pve_servers.len() || ci >= self.pve_containers.len() { return false; }
+        let server = &self.pve_servers[si];
+        let vmid = self.pve_containers[ci].vmid;
+        let cmd = proxmox::docker_exec_cmd(server, vmid, &docker_name);
+        let session = format!("dexec-{}-{}", vmid, docker_name);
+        self.open_tmux_session(&session, &cmd)
+    }
+
+    /// Docker start/stop/restart.
+    fn pve_docker_action(&mut self, action: &str) {
+        let docker_name = match self.pve_selected_docker() {
+            Some(n) => n,
+            None => { self.status_msg = Some("Select a docker container".into()); return; }
+        };
+        let si = self.pve_sel_server.unwrap_or(0);
+        let ci = self.pve_sel_ct.unwrap_or(0);
+        if si >= self.pve_servers.len() || ci >= self.pve_containers.len() { return; }
+        let server = &self.pve_servers[si];
+        let vmid = self.pve_containers[ci].vmid;
+        self.status_msg = Some(format!("{} {}...", action, docker_name));
+        let ok = match action {
+            "start" => proxmox::docker_start(server, vmid, &docker_name),
+            "stop" => proxmox::docker_stop(server, vmid, &docker_name),
+            "restart" => proxmox::docker_restart(server, vmid, &docker_name),
+            _ => false,
+        };
+        if ok {
+            self.status_msg = Some(format!("{} {}", action, docker_name));
+            self.pve_refresh();
+        } else {
+            self.status_msg = Some(format!("Failed to {} {}", action, docker_name));
+        }
+    }
+
+    /// Helper: open a tmux session with a command and switch to it.
+    fn open_tmux_session(&self, name: &str, cmd: &str) -> bool {
+        let has = std::process::Command::new("tmux")
+            .args(["has-session", "-t", &format!("={name}")])
+            .status().map(|s| s.success()).unwrap_or(false);
+        if !has {
+            let _ = std::process::Command::new("tmux")
+                .args(["new-session", "-d", "-s", name, cmd])
+                .status();
+        }
+        let _ = std::process::Command::new("tmux")
+            .args(["switch-client", "-t", &format!("={name}")])
+            .status();
+        true
+    }
+
     fn pve_delete_execute(&mut self) {
         let idx = match &self.mode { Mode::Confirming { idx, .. } => *idx, _ => return };
         if idx >= self.pve_containers.len() { self.mode = Mode::Normal; return; }
@@ -724,6 +841,12 @@ impl App {
             KeyCode::Char('r') if self.tab == Tab::Proxmox => self.pve_refresh(),
             KeyCode::Char('k') if self.tab == Tab::Proxmox && self.pve_depth == 0 => self.pve_install_key(),
             KeyCode::Char('D') if self.tab == Tab::Proxmox && self.pve_depth == 1 => self.pve_delete_confirm(),
+            // Depth 2: docker/log actions
+            KeyCode::Char('l') if self.tab == Tab::Proxmox && self.pve_depth == 1 => return self.pve_container_logs(),
+            KeyCode::Char('l') if self.tab == Tab::Proxmox && self.pve_depth == 2 => return self.pve_docker_logs(),
+            KeyCode::Char('e') if self.tab == Tab::Proxmox && self.pve_depth == 2 => return self.pve_docker_exec(),
+            KeyCode::Char('s') if self.tab == Tab::Proxmox && self.pve_depth == 2 => self.pve_docker_action("start"),
+            KeyCode::Char('x') if self.tab == Tab::Proxmox && self.pve_depth == 2 => self.pve_docker_action("stop"),
             _ => {}
         }
         false
@@ -1077,11 +1200,19 @@ fn render_hint(f: &mut ratatui::Frame, app: &App, area: Rect) {
                         ]);
                     } else if app.pve_depth == 1 {
                         spans.extend([
-                            Span::styled("[Enter]", Style::default().fg(GREEN)), Span::raw(" docker  "),
+                            Span::styled("[Enter]", Style::default().fg(GREEN)), Span::raw(" detail  "),
                             Span::styled("[c]", Style::default().fg(GREEN)), Span::raw("onsole  "),
+                            Span::styled("[l]", Style::default().fg(BLUE)), Span::raw("ogs  "),
                             Span::styled("[s]", Style::default().fg(GREEN)), Span::raw("tart  "),
                             Span::styled("[x]", Style::default().fg(RED)), Span::raw(" stop  "),
-                            Span::styled("[D]", Style::default().fg(RED)), Span::raw("elete  "),
+                            Span::styled("[D]", Style::default().fg(RED)), Span::raw("el  "),
+                        ]);
+                    } else if app.pve_depth == 2 {
+                        spans.extend([
+                            Span::styled("[l]", Style::default().fg(BLUE)), Span::raw("ogs  "),
+                            Span::styled("[e]", Style::default().fg(GREEN)), Span::raw("xec  "),
+                            Span::styled("[s]", Style::default().fg(GREEN)), Span::raw("tart  "),
+                            Span::styled("[x]", Style::default().fg(RED)), Span::raw(" stop  "),
                         ]);
                     }
                     if app.pve_depth > 0 {
@@ -1195,6 +1326,9 @@ fn cli_dispatch(args: &[String]) -> Result<()> {
             println!("                         Clone container/VM");
             println!("  pve-delete <server> <vmid>  Delete container/VM (must be stopped)");
             println!("  pve-templates <server> List available templates");
+            println!("  pve-logs <server> <vmid>       Tail container logs (tmux session)");
+            println!("  pve-docker-logs <server> <vmid> <name>  Tail docker logs");
+            println!("  pve-docker-exec <server> <vmid> <name>  Exec into docker");
             println!();
             println!("  connect-all            Open tmux sessions for all SSH hosts");
             println!("  exec-all <command>     Run command on all SSH hosts");
@@ -1458,6 +1592,75 @@ fn cli_dispatch(args: &[String]) -> Result<()> {
                     Err(e) => println!("✗ {e}"),
                 }
             }
+            Ok(())
+        }
+
+        "pve-logs" => {
+            if args.len() < 3 { anyhow::bail!("Usage: pve-logs <server> <vmid>"); }
+            let config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            let server = servers.iter().find(|s| s.name == args[1])
+                .ok_or_else(|| anyhow::anyhow!("Server '{}' not found", args[1]))?;
+            let vmid: u32 = args[2].parse()?;
+            let cts = proxmox::fetch_containers(server);
+            let ct = cts.iter().find(|c| c.vmid == vmid)
+                .ok_or_else(|| anyhow::anyhow!("Container {vmid} not found"))?;
+            let cmd = proxmox::container_logs_cmd(server, ct)
+                .ok_or_else(|| anyhow::anyhow!("Logs not available"))?;
+            let session = format!("log-{vmid}");
+            let has = std::process::Command::new("tmux")
+                .args(["has-session", "-t", &format!("={session}")])
+                .status().map(|s| s.success()).unwrap_or(false);
+            if !has {
+                std::process::Command::new("tmux")
+                    .args(["new-session", "-d", "-s", &session, &cmd]).status()?;
+            }
+            std::process::Command::new("tmux")
+                .args(["switch-client", "-t", &format!("={session}")]).status()?;
+            Ok(())
+        }
+
+        "pve-docker-logs" => {
+            if args.len() < 4 { anyhow::bail!("Usage: pve-docker-logs <server> <vmid> <container>"); }
+            let config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            let server = servers.iter().find(|s| s.name == args[1])
+                .ok_or_else(|| anyhow::anyhow!("Server '{}' not found", args[1]))?;
+            let vmid: u32 = args[2].parse()?;
+            let container = &args[3];
+            let cmd = proxmox::docker_logs_cmd(server, vmid, container);
+            let session = format!("dlog-{vmid}-{container}");
+            let has = std::process::Command::new("tmux")
+                .args(["has-session", "-t", &format!("={session}")])
+                .status().map(|s| s.success()).unwrap_or(false);
+            if !has {
+                std::process::Command::new("tmux")
+                    .args(["new-session", "-d", "-s", &session, &cmd]).status()?;
+            }
+            std::process::Command::new("tmux")
+                .args(["switch-client", "-t", &format!("={session}")]).status()?;
+            Ok(())
+        }
+
+        "pve-docker-exec" => {
+            if args.len() < 4 { anyhow::bail!("Usage: pve-docker-exec <server> <vmid> <container>"); }
+            let config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            let server = servers.iter().find(|s| s.name == args[1])
+                .ok_or_else(|| anyhow::anyhow!("Server '{}' not found", args[1]))?;
+            let vmid: u32 = args[2].parse()?;
+            let container = &args[3];
+            let cmd = proxmox::docker_exec_cmd(server, vmid, container);
+            let session = format!("dexec-{vmid}-{container}");
+            let has = std::process::Command::new("tmux")
+                .args(["has-session", "-t", &format!("={session}")])
+                .status().map(|s| s.success()).unwrap_or(false);
+            if !has {
+                std::process::Command::new("tmux")
+                    .args(["new-session", "-d", "-s", &session, &cmd]).status()?;
+            }
+            std::process::Command::new("tmux")
+                .args(["switch-client", "-t", &format!("={session}")]).status()?;
             Ok(())
         }
 

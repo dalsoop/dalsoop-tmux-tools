@@ -680,6 +680,57 @@ pub fn delete_ct(server: &ProxmoxServer, c: &Container) -> bool {
     ssh_run(&server.user, &server.host, &cmd).is_some()
 }
 
+// ── Docker management ──
+
+pub fn docker_start(server: &ProxmoxServer, vmid: u32, container: &str) -> bool {
+    let cmd = format!("pct exec {vmid} -- docker start {container} 2>&1");
+    ssh_run(&server.user, &server.host, &cmd).is_some()
+}
+
+pub fn docker_stop(server: &ProxmoxServer, vmid: u32, container: &str) -> bool {
+    let cmd = format!("pct exec {vmid} -- docker stop {container} 2>&1");
+    ssh_run(&server.user, &server.host, &cmd).is_some()
+}
+
+pub fn docker_restart(server: &ProxmoxServer, vmid: u32, container: &str) -> bool {
+    let cmd = format!("pct exec {vmid} -- docker restart {container} 2>&1");
+    ssh_run(&server.user, &server.host, &cmd).is_some()
+}
+
+/// Returns a tmux command to tail docker logs.
+pub fn docker_logs_cmd(server: &ProxmoxServer, vmid: u32, container: &str) -> String {
+    format!(
+        "ssh -t {}@{} pct exec {} -- docker logs -f --tail 100 {}",
+        server.user, server.host, vmid, container
+    )
+}
+
+/// Returns a tmux command to tail container system logs.
+pub fn container_logs_cmd(server: &ProxmoxServer, c: &Container) -> Option<String> {
+    if server.access == AccessType::Api { return None; }
+    if c.kind == "vm" {
+        // VM: serial console log
+        Some(format!(
+            "ssh -t {}@{} qm terminal {}",
+            server.user, server.host, c.vmid
+        ))
+    } else {
+        // LXC: journalctl or syslog
+        Some(format!(
+            "ssh -t {}@{} pct exec {} -- sh -c 'journalctl -f -n 100 2>/dev/null || tail -f /var/log/syslog 2>/dev/null || tail -f /var/log/messages'",
+            server.user, server.host, c.vmid
+        ))
+    }
+}
+
+/// Returns a tmux command to exec into docker container.
+pub fn docker_exec_cmd(server: &ProxmoxServer, vmid: u32, container: &str) -> String {
+    format!(
+        "ssh -t {}@{} pct exec {} -- docker exec -it {} sh -c 'bash 2>/dev/null || sh'",
+        server.user, server.host, vmid, container
+    )
+}
+
 // ── Display ──
 
 pub fn display_server(s: &ProxmoxServer) -> Line<'static> {
