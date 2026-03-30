@@ -5,8 +5,6 @@ use tmux_fmt::tmux::sanitize as sanitize_tmux;
 pub fn run(range: &str) -> Result<()> {
     if range == "window" {
         tmux::run(&["select-window"])?;
-    } else if range == "_clear_" {
-        tmux::run(&["send-keys", "-R", ";", "clear-history"])?;
     } else if range == "_new_" {
         tmux::run(&["new-session", "-d"])?;
     } else if let Some(sess) = range.strip_prefix("_k") {
