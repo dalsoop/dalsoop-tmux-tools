@@ -115,6 +115,9 @@ pub struct WindowConfig {
     pub show_kill_button: bool,
     #[serde(default = "default_true")]
     pub show_new_button: bool,
+    /// Default mode for new apps: "window" or "pane"
+    #[serde(default = "default_app_mode")]
+    pub default_app_mode: String,
     #[serde(default = "default_fg")]
     pub fg: String,
     #[serde(default = "default_bg")]
@@ -396,6 +399,7 @@ pub fn default_config() -> Config {
             running_bg: default_running_bg(),
             idle_fg: default_idle_fg(),
             idle_bg: default_idle_bg(),
+            default_app_mode: default_app_mode(),
         },
         colors,
         apps,

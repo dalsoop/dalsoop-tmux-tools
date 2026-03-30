@@ -2,44 +2,59 @@ use tmux_windowbar::config::template::Config;
 
 use crate::form::{Field, Form};
 
-/// A single settings key-value item.
+/// A single settings key-value item with getter/setter.
 #[derive(Debug, Clone)]
 pub struct SettingItem {
     pub label: &'static str,
     pub value: String,
 }
 
-/// Build the flat list of all settings items from a config.
-pub fn build_items(config: &Config) -> Vec<SettingItem> {
-    let w = &config.window;
-    let t = &config.theme;
-    vec![
-        SettingItem { label: "window.fg",              value: w.fg.clone() },
-        SettingItem { label: "window.bg",              value: w.bg.clone() },
-        SettingItem { label: "window.active_fg",       value: w.active_fg.clone() },
-        SettingItem { label: "window.active_bg",       value: w.active_bg.clone() },
-        SettingItem { label: "window.kill_fg",         value: w.kill_fg.clone() },
-        SettingItem { label: "window.kill_bg",         value: w.kill_bg.clone() },
-        SettingItem { label: "window.button_fg",       value: w.button_fg.clone() },
-        SettingItem { label: "window.button_bg",       value: w.button_bg.clone() },
-        SettingItem { label: "window.running_fg",      value: w.running_fg.clone() },
-        SettingItem { label: "window.running_bg",      value: w.running_bg.clone() },
-        SettingItem { label: "window.idle_fg",         value: w.idle_fg.clone() },
-        SettingItem { label: "window.idle_bg",         value: w.idle_bg.clone() },
-        SettingItem { label: "theme.users_label",      value: t.users_label.clone() },
-        SettingItem { label: "theme.windows_label",    value: t.windows_label.clone() },
-        SettingItem { label: "theme.panes_label",      value: t.panes_label.clone() },
-        SettingItem { label: "theme.apps_label",       value: t.apps_label.clone() },
-        SettingItem { label: "theme.user_viewed_fg",   value: t.user_viewed_fg.clone() },
-        SettingItem { label: "theme.user_viewed_bg",   value: t.user_viewed_bg.clone() },
-        SettingItem { label: "theme.user_session_fg",  value: t.user_session_fg.clone() },
-        SettingItem { label: "theme.user_session_bg",  value: t.user_session_bg.clone() },
-        SettingItem { label: "theme.ssh_connected_fg", value: t.ssh_connected_fg.clone() },
-        SettingItem { label: "theme.ssh_connected_bg", value: t.ssh_connected_bg.clone() },
-    ]
+/// Settings definition: (label, getter, setter)
+type Getter = fn(&Config) -> String;
+type Setter = fn(&mut Config, String);
+
+struct SettingDef {
+    label: &'static str,
+    get: Getter,
+    set: Setter,
 }
 
-/// Build an edit form for the settings item at `idx`.
+// All settings defined in one place — adding/removing/reordering here
+// automatically updates the TUI, with no index math to maintain.
+const DEFS: &[SettingDef] = &[
+    SettingDef { label: "window.default_app_mode", get: |c| c.window.default_app_mode.clone(), set: |c, v| c.window.default_app_mode = v },
+    SettingDef { label: "window.show_kill_button", get: |c| c.window.show_kill_button.to_string(), set: |c, v| c.window.show_kill_button = v == "true" },
+    SettingDef { label: "window.show_new_button",  get: |c| c.window.show_new_button.to_string(),  set: |c, v| c.window.show_new_button = v == "true" },
+    SettingDef { label: "window.fg",               get: |c| c.window.fg.clone(),              set: |c, v| c.window.fg = v },
+    SettingDef { label: "window.bg",               get: |c| c.window.bg.clone(),              set: |c, v| c.window.bg = v },
+    SettingDef { label: "window.active_fg",        get: |c| c.window.active_fg.clone(),       set: |c, v| c.window.active_fg = v },
+    SettingDef { label: "window.active_bg",        get: |c| c.window.active_bg.clone(),       set: |c, v| c.window.active_bg = v },
+    SettingDef { label: "window.kill_fg",           get: |c| c.window.kill_fg.clone(),          set: |c, v| c.window.kill_fg = v },
+    SettingDef { label: "window.kill_bg",           get: |c| c.window.kill_bg.clone(),          set: |c, v| c.window.kill_bg = v },
+    SettingDef { label: "window.button_fg",        get: |c| c.window.button_fg.clone(),       set: |c, v| c.window.button_fg = v },
+    SettingDef { label: "window.button_bg",        get: |c| c.window.button_bg.clone(),       set: |c, v| c.window.button_bg = v },
+    SettingDef { label: "window.running_fg",       get: |c| c.window.running_fg.clone(),      set: |c, v| c.window.running_fg = v },
+    SettingDef { label: "window.running_bg",       get: |c| c.window.running_bg.clone(),      set: |c, v| c.window.running_bg = v },
+    SettingDef { label: "window.idle_fg",          get: |c| c.window.idle_fg.clone(),         set: |c, v| c.window.idle_fg = v },
+    SettingDef { label: "window.idle_bg",          get: |c| c.window.idle_bg.clone(),         set: |c, v| c.window.idle_bg = v },
+    SettingDef { label: "theme.users_label",       get: |c| c.theme.users_label.clone(),      set: |c, v| c.theme.users_label = v },
+    SettingDef { label: "theme.windows_label",     get: |c| c.theme.windows_label.clone(),    set: |c, v| c.theme.windows_label = v },
+    SettingDef { label: "theme.panes_label",       get: |c| c.theme.panes_label.clone(),      set: |c, v| c.theme.panes_label = v },
+    SettingDef { label: "theme.apps_label",        get: |c| c.theme.apps_label.clone(),       set: |c, v| c.theme.apps_label = v },
+    SettingDef { label: "theme.user_viewed_fg",    get: |c| c.theme.user_viewed_fg.clone(),   set: |c, v| c.theme.user_viewed_fg = v },
+    SettingDef { label: "theme.user_viewed_bg",    get: |c| c.theme.user_viewed_bg.clone(),   set: |c, v| c.theme.user_viewed_bg = v },
+    SettingDef { label: "theme.user_session_fg",   get: |c| c.theme.user_session_fg.clone(),  set: |c, v| c.theme.user_session_fg = v },
+    SettingDef { label: "theme.user_session_bg",   get: |c| c.theme.user_session_bg.clone(),  set: |c, v| c.theme.user_session_bg = v },
+    SettingDef { label: "theme.ssh_connected_fg",  get: |c| c.theme.ssh_connected_fg.clone(), set: |c, v| c.theme.ssh_connected_fg = v },
+    SettingDef { label: "theme.ssh_connected_bg",  get: |c| c.theme.ssh_connected_bg.clone(), set: |c, v| c.theme.ssh_connected_bg = v },
+];
+
+pub fn build_items(config: &Config) -> Vec<SettingItem> {
+    DEFS.iter()
+        .map(|d| SettingItem { label: d.label, value: (d.get)(config) })
+        .collect()
+}
+
 pub fn edit_form(items: &[SettingItem], idx: usize) -> Form {
     let item = &items[idx];
     Form::new(
@@ -48,40 +63,14 @@ pub fn edit_form(items: &[SettingItem], idx: usize) -> Form {
     )
 }
 
-/// Apply a completed single-field form back to the config.
 pub fn apply_form(config: &mut Config, form: &Form) {
     let idx = match form.edit_idx {
         Some(i) => i,
         None => return,
     };
+    if idx >= DEFS.len() { return; }
     let new_val = form.fields[0].value.clone();
-    let w = &mut config.window;
-    let t = &mut config.theme;
-    match idx {
-        0  => w.fg = new_val,
-        1  => w.bg = new_val,
-        2  => w.active_fg = new_val,
-        3  => w.active_bg = new_val,
-        4  => w.kill_fg = new_val,
-        5  => w.kill_bg = new_val,
-        6  => w.button_fg = new_val,
-        7  => w.button_bg = new_val,
-        8  => w.running_fg = new_val,
-        9  => w.running_bg = new_val,
-        10 => w.idle_fg = new_val,
-        11 => w.idle_bg = new_val,
-        12 => t.users_label = new_val,
-        13 => t.windows_label = new_val,
-        14 => t.panes_label = new_val,
-        15 => t.apps_label = new_val,
-        16 => t.user_viewed_fg = new_val,
-        17 => t.user_viewed_bg = new_val,
-        18 => t.user_session_fg = new_val,
-        19 => t.user_session_bg = new_val,
-        20 => t.ssh_connected_fg = new_val,
-        21 => t.ssh_connected_bg = new_val,
-        _  => {}
-    }
+    (DEFS[idx].set)(config, new_val);
 }
 
 #[cfg(test)]
@@ -90,10 +79,10 @@ mod tests {
     use tmux_windowbar::config::template::default_config;
 
     #[test]
-    fn build_items_returns_22_entries() {
+    fn build_items_count_matches_defs() {
         let config = default_config();
         let items = build_items(&config);
-        assert_eq!(items.len(), 22);
+        assert_eq!(items.len(), DEFS.len());
     }
 
     #[test]
@@ -103,27 +92,48 @@ mod tests {
         let form = edit_form(&items, 0);
         assert_eq!(form.fields.len(), 1);
         assert_eq!(form.edit_idx, Some(0));
-        assert_eq!(form.fields[0].value, config.window.fg);
     }
 
     #[test]
-    fn apply_form_updates_window_fg() {
+    fn apply_form_updates_value() {
         let mut config = default_config();
         let items = build_items(&config);
         let mut form = edit_form(&items, 0);
-        form.fields[0].value = "#123456".into();
+        form.fields[0].value = "pane".into();
         apply_form(&mut config, &form);
-        assert_eq!(config.window.fg, "#123456");
+        assert_eq!(config.window.default_app_mode, "pane");
     }
 
     #[test]
-    fn apply_form_updates_theme_field() {
+    fn apply_form_updates_theme() {
         let mut config = default_config();
         let items = build_items(&config);
-        // index 12 = theme.users_label
-        let mut form = edit_form(&items, 12);
-        form.fields[0].value = "#aabbcc".into();
+        // Find theme.users_label
+        let idx = items.iter().position(|i| i.label == "theme.users_label").unwrap();
+        let mut form = edit_form(&items, idx);
+        form.fields[0].value = "#ff0000".into();
         apply_form(&mut config, &form);
-        assert_eq!(config.theme.users_label, "#aabbcc");
+        assert_eq!(config.theme.users_label, "#ff0000");
+    }
+
+    #[test]
+    fn apply_form_bool_setting() {
+        let mut config = default_config();
+        let items = build_items(&config);
+        let idx = items.iter().position(|i| i.label == "window.show_kill_button").unwrap();
+        let mut form = edit_form(&items, idx);
+        form.fields[0].value = "false".into();
+        apply_form(&mut config, &form);
+        assert!(!config.window.show_kill_button);
+    }
+
+    #[test]
+    fn roundtrip_all_settings() {
+        let config = default_config();
+        let items = build_items(&config);
+        for (i, item) in items.iter().enumerate() {
+            let form = edit_form(&items, i);
+            assert_eq!(form.fields[0].value, item.value, "mismatch at {}", item.label);
+        }
     }
 }

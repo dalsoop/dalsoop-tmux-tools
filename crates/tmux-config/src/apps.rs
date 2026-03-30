@@ -3,12 +3,12 @@ use tmux_windowbar::config::template::{AppEntry, Config};
 use crate::form::{Field, Form};
 
 /// Build form fields for adding a new app entry.
-pub fn add_form() -> Form {
+pub fn add_form(config: &Config) -> Form {
     Form::new(
         vec![
             Field { label: "Emoji", value: String::new() },
             Field { label: "Command", value: String::new() },
-            Field { label: "Mode (window/pane)", value: "window".into() },
+            Field { label: "Mode (window/pane)", value: config.window.default_app_mode.clone() },
             Field { label: "FG color", value: "#282c34".into() },
             Field { label: "BG color", value: "#61afef".into() },
         ],
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn add_form_has_five_fields() {
-        let f = add_form();
+        let config = default_config(); let f = add_form(&config);
         assert_eq!(f.fields.len(), 5);
         assert_eq!(f.edit_idx, None);
     }
@@ -94,7 +94,7 @@ mod tests {
     fn apply_form_adds_entry() {
         let mut config = default_config();
         let initial_count = config.apps.len();
-        let mut form = add_form();
+        let mut form = add_form(&config);
         form.fields[0].value = "\u{1f4e6}".into();
         form.fields[1].value = "cargo".into();
         form.fields[2].value = "pane".into();
@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn apply_form_defaults_unknown_mode_to_window() {
         let mut config = default_config();
-        let mut form = add_form();
+        let mut form = add_form(&config);
         form.fields[0].value = "\u{1f4e6}".into();
         form.fields[1].value = "foo".into();
         form.fields[2].value = "unknown".into();

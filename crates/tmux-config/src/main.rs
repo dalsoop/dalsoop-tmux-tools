@@ -414,7 +414,7 @@ impl App {
     fn start_add(&mut self) {
         self.form = Some(match self.tab {
             Tab::Ssh      => ssh::add_form(),
-            Tab::Apps     => apps::add_form(),
+            Tab::Apps     => apps::add_form(&self.config),
             Tab::Settings | Tab::Proxmox => return, // no "add" for these
         });
         self.mode = Mode::Editing;
@@ -583,12 +583,17 @@ impl App {
                 self.tab = Tab::from_index(next);
                 self.status_msg = None;
             }
-            KeyCode::Char('1') => { self.tab = Tab::Ssh;        self.status_msg = None; }
-            KeyCode::Char('2') => { self.tab = Tab::Apps;       self.status_msg = None; }
-            KeyCode::Char('3') => { self.tab = Tab::Settings;   self.status_msg = None; }
+            KeyCode::Char(n @ '1'..='9') => {
+                let idx = (n as usize) - ('1' as usize);
+                if idx < Tab::titles().len() {
+                    self.tab = Tab::from_index(idx);
+                    self.status_msg = None;
+                }
+            }
             KeyCode::Char('4') => { self.tab = Tab::Proxmox; self.status_msg = None; }
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
-            KeyCode::Up   | KeyCode::Char('k') => self.move_up(),
+            KeyCode::Up => self.move_up(),
+            KeyCode::Char('k') if !(self.tab == Tab::Proxmox && self.pve_depth == 0) => self.move_up(),
             KeyCode::Char('a') if self.tab != Tab::Proxmox => self.start_add(),
             KeyCode::Char('e') if self.tab != Tab::Proxmox => self.start_edit(),
             KeyCode::Enter if self.tab != Tab::Proxmox => self.start_edit(),
