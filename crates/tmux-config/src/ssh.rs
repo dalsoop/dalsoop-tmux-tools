@@ -32,8 +32,28 @@ pub fn manage() -> Result<()> {
         } else if selection == ssh_count + 1 {
             break;
         } else {
-            delete(selection)?;
+            detail(selection)?;
         }
+    }
+    Ok(())
+}
+
+fn detail(idx: usize) -> Result<()> {
+    let config = load_config()?;
+    let entry = &config.ssh[idx];
+    println!("  {} {} ({}@{})", entry.emoji, entry.name, entry.user.as_deref().unwrap_or("-"), entry.host);
+
+    let actions = &["Edit", "Delete", "Back"];
+    let action = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Action")
+        .items(actions)
+        .default(0)
+        .interact()?;
+
+    match action {
+        0 => edit(idx)?,
+        1 => delete(idx)?,
+        _ => {}
     }
     Ok(())
 }
@@ -62,6 +82,39 @@ fn add() -> Result<()> {
     });
     save_and_apply(&config)?;
     println!("Added");
+    Ok(())
+}
+
+fn edit(idx: usize) -> Result<()> {
+    let mut config = load_config()?;
+    let entry = &config.ssh[idx];
+    let theme = ColorfulTheme::default();
+
+    let name: String = Input::with_theme(&theme)
+        .with_prompt("Name")
+        .default(entry.name.clone())
+        .interact_text()?;
+    let host: String = Input::with_theme(&theme)
+        .with_prompt("Host")
+        .default(entry.host.clone())
+        .interact_text()?;
+    let user: String = Input::with_theme(&theme)
+        .with_prompt("User (optional)")
+        .default(entry.user.clone().unwrap_or_default())
+        .interact_text()?;
+    let emoji: String = Input::with_theme(&theme)
+        .with_prompt("Emoji")
+        .default(entry.emoji.clone())
+        .interact_text()?;
+
+    let e = &mut config.ssh[idx];
+    e.name = name;
+    e.host = host;
+    e.user = if user.is_empty() { None } else { Some(user) };
+    e.emoji = emoji;
+
+    save_and_apply(&config)?;
+    println!("Updated");
     Ok(())
 }
 

@@ -26,8 +26,28 @@ pub fn manage() -> Result<()> {
         } else if selection == apps_count + 1 {
             break;
         } else {
-            delete(selection)?;
+            detail(selection)?;
         }
+    }
+    Ok(())
+}
+
+fn detail(idx: usize) -> Result<()> {
+    let config = load_config()?;
+    let app = &config.apps[idx];
+    println!("  {} {} [{}] fg={} bg={}", app.emoji, app.command, app.mode, app.fg, app.bg);
+
+    let actions = &["Edit", "Delete", "Back"];
+    let action = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Action")
+        .items(actions)
+        .default(0)
+        .interact()?;
+
+    match action {
+        0 => edit(idx)?,
+        1 => delete(idx)?,
+        _ => {}
     }
     Ok(())
 }
@@ -50,24 +70,62 @@ fn add() -> Result<()> {
     let mode = mode_items[mode_idx].to_string();
 
     let fg: String = Input::with_theme(&theme)
-        .with_prompt("Foreground color (hex)")
+        .with_prompt("FG color")
         .default("#282c34".into())
         .interact_text()?;
     let bg: String = Input::with_theme(&theme)
-        .with_prompt("Background color (hex)")
+        .with_prompt("BG color")
         .default("#61afef".into())
         .interact_text()?;
 
     let mut config = load_config()?;
-    config.apps.push(AppEntry {
-        emoji,
-        command,
-        mode,
-        fg,
-        bg,
-    });
+    config.apps.push(AppEntry { emoji, command, mode, fg, bg });
     save_and_apply(&config)?;
     println!("Added");
+    Ok(())
+}
+
+fn edit(idx: usize) -> Result<()> {
+    let mut config = load_config()?;
+    let app = &config.apps[idx];
+    let theme = ColorfulTheme::default();
+
+    let emoji: String = Input::with_theme(&theme)
+        .with_prompt("Emoji")
+        .default(app.emoji.clone())
+        .interact_text()?;
+    let command: String = Input::with_theme(&theme)
+        .with_prompt("Command")
+        .default(app.command.clone())
+        .interact_text()?;
+
+    let mode_items = &["window", "pane"];
+    let current_mode = if app.mode == "pane" { 1 } else { 0 };
+    let mode_idx = Select::with_theme(&theme)
+        .with_prompt("Mode")
+        .items(mode_items)
+        .default(current_mode)
+        .interact()?;
+    let mode = mode_items[mode_idx].to_string();
+
+    let fg: String = Input::with_theme(&theme)
+        .with_prompt("FG color")
+        .default(app.fg.clone())
+        .interact_text()?;
+    let bg: String = Input::with_theme(&theme)
+        .with_prompt("BG color")
+        .default(app.bg.clone())
+        .interact_text()?;
+
+    let a = &mut config.apps[idx];
+    a.emoji = emoji;
+    a.command = command;
+    a.mode = mode;
+    a.fg = fg;
+    a.bg = bg;
+
+    save_and_apply(&config)?;
+    println!("Updated");
     Ok(())
 }
 
