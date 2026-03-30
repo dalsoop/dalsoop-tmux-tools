@@ -748,17 +748,28 @@ fn render_body(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
                 .map(|s| {
                     let installed = seed::is_installed(s.command);
                     let in_config = app.config.apps.iter().any(|a| a.command == s.command);
-                    let status = if in_config { "✓ added" } else if installed { "✓ ready" } else { "✗" };
+                    let method = seed::install_method(s);
+                    let status = if in_config {
+                        "✓ added".to_string()
+                    } else if installed {
+                        "✓ ready".to_string()
+                    } else if method != "-" {
+                        format!("✗ via {method}")
+                    } else {
+                        "✗ n/a".to_string()
+                    };
                     let style = if in_config {
                         Style::default().fg(SUBTLE)
                     } else if installed {
                         Style::default().fg(GREEN)
-                    } else {
+                    } else if method != "-" {
                         Style::default().fg(FG)
+                    } else {
+                        Style::default().fg(RED)
                     };
                     ListItem::new(Line::from(vec![
                         Span::styled(format!("  {} {:<14} ", s.emoji, s.command), style),
-                        Span::styled(format!("{:<8} ", status), if installed { Style::default().fg(GREEN) } else { Style::default().fg(RED) }),
+                        Span::styled(format!("{:<12} ", status), if installed || in_config { Style::default().fg(GREEN) } else if method != "-" { Style::default().fg(BLUE) } else { Style::default().fg(RED) }),
                         Span::styled(s.description, Style::default().fg(SUBTLE)),
                     ]))
                 })
