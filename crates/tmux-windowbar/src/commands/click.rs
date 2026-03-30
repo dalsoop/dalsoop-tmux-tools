@@ -32,7 +32,7 @@ pub fn run(range: &str) -> Result<()> {
                 } else {
                     // Auto-reconnecting SSH session
                     let ssh_cmd = format!(
-                        "while true; do ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 {ssh_target}; echo '[연결 끊김 - 5초 후 재접속]'; sleep 5; done"
+                        "while true; do ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 {ssh_target}; RC=$?; if [ $RC -eq 0 ]; then break; fi; echo '[연결 끊김 - 5초 후 재접속]'; sleep 5; done"
                     );
                     tmux::run(&["new-session", "-d", "-s", &session_name, &ssh_cmd])?;
                     tmux::run(&["switch-client", "-t", &format!("={session_name}")])?;
