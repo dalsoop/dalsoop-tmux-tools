@@ -28,7 +28,7 @@ use tmux_windowbar::config::template::Config;
 use config_io::{load_config, save_and_apply};
 use form::Form;
 use list_view::ListView;
-use proxmox::{ProxmoxServer, Container, DockerContainer};
+use proxmox::{ProxmoxServer, Container};
 use settings::SettingItem;
 use tabs::Tab;
 
@@ -67,8 +67,7 @@ struct App {
     pve_sel_server: Option<usize>,
     pve_containers: Vec<Container>,
     pve_sel_ct:     Option<usize>,
-    pve_docker:     Vec<DockerContainer>,
-    pve_ports:      Vec<String>,
+    pve_detail:     Option<proxmox::DetailInfo>,
 }
 
 impl App {
@@ -91,8 +90,7 @@ impl App {
             pve_sel_server: None,
             pve_containers: Vec::new(),
             pve_sel_ct: None,
-            pve_docker: Vec::new(),
-            pve_ports: Vec::new(),
+            pve_detail: None,
         };
         app.sync_lengths();
         app
@@ -109,7 +107,9 @@ impl App {
         let len = match self.pve_depth {
             0 => self.pve_servers.len(),
             1 => self.pve_containers.len(),
-            _ => self.pve_docker.len() + self.pve_ports.len(),
+            _ => self.pve_detail.as_ref().map_or(0, |d|
+                d.docker.len() + d.ports.len() + d.snapshots.len() + 10 // header lines
+            ),
         };
         self.pve_list.set_len(len);
     }
@@ -153,18 +153,16 @@ impl App {
                 let server_idx = self.pve_sel_server.unwrap_or(0);
                 let server = &self.pve_servers[server_idx];
                 let ct = &self.pve_containers[idx];
-                if ct.kind != "lxc" {
-                    self.status_msg = Some("Docker inspection only for LXC".into());
-                    return;
-                }
                 self.pve_sel_ct = Some(idx);
-                self.status_msg = Some("Loading docker & ports...".into());
-                self.pve_docker = proxmox::fetch_docker(server, ct.vmid);
-                self.pve_ports = proxmox::fetch_ports(server, ct.vmid);
+                self.status_msg = Some("Loading details...".into());
+                self.pve_detail = Some(proxmox::fetch_detail(server, ct));
                 self.pve_depth = 2;
                 self.sync_pve_list();
-                let msg = format!("{} docker, {} ports", self.pve_docker.len(), self.pve_ports.len());
-                self.status_msg = Some(msg);
+                let d = self.pve_detail.as_ref().unwrap();
+                self.status_msg = Some(format!(
+                    "{} docker, {} ports, {} snapshots",
+                    d.docker.len(), d.ports.len(), d.snapshots.len()
+                ));
             }
             _ => {}
         }
@@ -174,8 +172,7 @@ impl App {
         match self.pve_depth {
             2 => {
                 self.pve_depth = 1;
-                self.pve_docker.clear();
-                self.pve_ports.clear();
+                self.pve_detail = None;
                 self.sync_pve_list();
                 self.status_msg = None;
             }
@@ -210,9 +207,8 @@ impl App {
                 let ci = self.pve_sel_ct.unwrap_or(0);
                 if si < self.pve_servers.len() && ci < self.pve_containers.len() {
                     let server = &self.pve_servers[si];
-                    let vmid = self.pve_containers[ci].vmid;
-                    self.pve_docker = proxmox::fetch_docker(server, vmid);
-                    self.pve_ports = proxmox::fetch_ports(server, vmid);
+                    let ct = &self.pve_containers[ci];
+                    self.pve_detail = Some(proxmox::fetch_detail(server, ct));
                     self.sync_pve_list();
                 }
             }
@@ -433,7 +429,7 @@ impl App {
                 let ci = self.pve_sel_ct.unwrap_or(0);
                 let sname = self.pve_servers.get(si).map(|s| s.name.as_str()).unwrap_or("?");
                 let cname = self.pve_containers.get(ci).map(|c| c.name.as_str()).unwrap_or("?");
-                format!("{sname} > {cname} > Docker/Ports")
+                format!("{sname} > {cname} > Detail")
             }
         }
     }
@@ -929,13 +925,13 @@ fn render_proxmox_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
             .map(|c| ListItem::new(proxmox::display_container(c)))
             .collect(),
         _ => {
-            let mut items: Vec<ListItem> = app.pve_docker.iter()
-                .map(|d| ListItem::new(proxmox::display_docker(d)))
-                .collect();
-            for p in &app.pve_ports {
-                items.push(ListItem::new(proxmox::display_port(p)));
+            if let Some(detail) = &app.pve_detail {
+                proxmox::display_detail(detail).into_iter()
+                    .map(ListItem::new)
+                    .collect()
+            } else {
+                vec![ListItem::new("  (no data)")]
             }
-            items
         }
     };
 

@@ -36,8 +36,35 @@ pub struct Container {
 #[derive(Clone, Debug)]
 pub struct DockerContainer {
     pub name: String,
+    pub image: String,
     pub status: String,
     pub ports: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct Snapshot {
+    pub name: String,
+    pub date: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct Resources {
+    pub cpus: String,
+    pub mem_used: String,
+    pub mem_total: String,
+    pub disk_used: String,
+    pub disk_total: String,
+    pub uptime: String,
+    pub ip: String,
+}
+
+/// All detail info for a container, fetched at once.
+#[derive(Clone, Debug)]
+pub struct DetailInfo {
+    pub resources: Option<Resources>,
+    pub docker: Vec<DockerContainer>,
+    pub ports: Vec<String>,
+    pub snapshots: Vec<Snapshot>,
 }
 
 // ── Config helpers ──
@@ -254,9 +281,9 @@ fn ssh_fetch_containers(server: &ProxmoxServer) -> Vec<Container> {
 }
 
 pub fn fetch_docker(server: &ProxmoxServer, vmid: u32) -> Vec<DockerContainer> {
-    if server.access == AccessType::Api { return Vec::new(); } // Docker inspection requires SSH
+    if server.access == AccessType::Api { return Vec::new(); }
     let cmd = format!(
-        "pct exec {vmid} -- docker ps --format '{{{{.Names}}}}\\t{{{{.Status}}}}\\t{{{{.Ports}}}}' 2>/dev/null"
+        "pct exec {vmid} -- docker ps --format '{{{{.Names}}}}\\t{{{{.Image}}}}\\t{{{{.Status}}}}\\t{{{{.Ports}}}}' 2>/dev/null"
     );
     let out = match ssh_run(&server.user, &server.host, &cmd) {
         Some(o) => o,
@@ -266,11 +293,12 @@ pub fn fetch_docker(server: &ProxmoxServer, vmid: u32) -> Vec<DockerContainer> {
     out.lines()
         .filter(|l| !l.is_empty())
         .map(|l| {
-            let parts: Vec<&str> = l.splitn(3, '\t').collect();
+            let parts: Vec<&str> = l.splitn(4, '\t').collect();
             DockerContainer {
                 name: parts.first().unwrap_or(&"").to_string(),
-                status: parts.get(1).unwrap_or(&"").to_string(),
-                ports: parts.get(2).unwrap_or(&"").to_string(),
+                image: parts.get(1).unwrap_or(&"").to_string(),
+                status: parts.get(2).unwrap_or(&"").to_string(),
+                ports: parts.get(3).unwrap_or(&"").to_string(),
             }
         })
         .collect()
@@ -351,6 +379,93 @@ pub fn console_cmd(server: &ProxmoxServer, c: &Container) -> Option<String> {
         format!("pct enter {}", c.vmid)
     };
     Some(format!("ssh -t {}@{} {enter}", server.user, server.host))
+}
+
+// ── Detail fetch (combined) ──
+
+pub fn fetch_detail(server: &ProxmoxServer, c: &Container) -> DetailInfo {
+    DetailInfo {
+        resources: fetch_resources(server, c),
+        docker: fetch_docker(server, c.vmid),
+        ports: fetch_ports(server, c.vmid),
+        snapshots: fetch_snapshots(server, c),
+    }
+}
+
+fn fetch_resources(server: &ProxmoxServer, c: &Container) -> Option<Resources> {
+    if server.access == AccessType::Api { return None; }
+    let kind = if c.kind == "vm" { "qm" } else { "pct" };
+    let cmd = format!(
+        r#"{kind} status {vmid} 2>/dev/null && {kind} config {vmid} 2>/dev/null | grep -E '^(cores|memory|rootfs|net)'"#,
+        vmid = c.vmid
+    );
+    let out = ssh_run(&server.user, &server.host, &cmd)?;
+
+    let mut cpus = "?".to_string();
+    let mut mem_total = "?".to_string();
+    let mut disk_total = "?".to_string();
+    let mut mem_used = "?".to_string();
+    let mut uptime = "?".to_string();
+    let mut ip = "-".to_string();
+
+    for line in out.lines() {
+        if line.starts_with("cores:") {
+            cpus = line.split(':').nth(1).unwrap_or("?").trim().to_string();
+        } else if line.starts_with("memory:") {
+            mem_total = format!("{}MB", line.split(':').nth(1).unwrap_or("?").trim());
+        } else if line.contains("rootfs:") {
+            if let Some(size) = line.split("size=").nth(1) {
+                disk_total = size.split(',').next().unwrap_or("?").trim().to_string();
+            }
+        } else if line.starts_with("status:") {
+            // skip
+        } else if line.contains("mem:") {
+            let val = line.split(':').nth(1).unwrap_or("0").trim();
+            if let Ok(bytes) = val.parse::<u64>() {
+                mem_used = format!("{}MB", bytes / 1024 / 1024);
+            }
+        } else if line.contains("uptime:") {
+            let val = line.split(':').nth(1).unwrap_or("0").trim();
+            if let Ok(secs) = val.parse::<u64>() {
+                let h = secs / 3600;
+                let d = h / 24;
+                if d > 0 { uptime = format!("{d}d {h}h", h = h % 24); }
+                else { uptime = format!("{h}h"); }
+            }
+        }
+    }
+
+    // Get IP
+    if c.kind == "lxc" {
+        if let Some(ip_out) = ssh_run(&server.user, &server.host,
+            &format!("pct exec {} -- hostname -I 2>/dev/null", c.vmid))
+        {
+            ip = ip_out.trim().split_whitespace().next().unwrap_or("-").to_string();
+        }
+    }
+
+    Some(Resources { cpus, mem_used, mem_total, disk_used: "-".into(), disk_total, uptime, ip })
+}
+
+fn fetch_snapshots(server: &ProxmoxServer, c: &Container) -> Vec<Snapshot> {
+    if server.access == AccessType::Api { return Vec::new(); }
+    let kind = if c.kind == "vm" { "qm" } else { "pct" };
+    let cmd = format!("{kind} listsnapshot {} 2>/dev/null", c.vmid);
+    let out = match ssh_run(&server.user, &server.host, &cmd) {
+        Some(o) => o,
+        None => return Vec::new(),
+    };
+    out.lines()
+        .filter(|l| !l.trim().is_empty() && !l.contains("current"))
+        .map(|l| {
+            let parts: Vec<&str> = l.split_whitespace().collect();
+            let name = parts.first().map(|s| s.trim_start_matches('`').trim_end_matches('`'))
+                .unwrap_or("?").to_string();
+            let date = parts.get(1).unwrap_or(&"").to_string();
+            Snapshot { name, date }
+        })
+        .filter(|s| s.name != "current" && !s.name.is_empty())
+        .collect()
 }
 
 // ── LXC/VM Management ──
@@ -478,27 +593,88 @@ pub fn display_container(c: &Container) -> Line<'static> {
     ])
 }
 
-pub fn display_docker(d: &DockerContainer) -> Line<'static> {
-    let color = if d.status.starts_with("Up") {
-        Color::Rgb(152, 195, 121)
-    } else {
-        Color::Rgb(224, 108, 117)
-    };
-    Line::from(vec![
-        Span::styled("  🐳 ", Style::default()),
-        Span::styled(format!("{:<24}", d.name), Style::default().fg(color)),
-        Span::styled(
-            format!("  {}", d.ports),
-            Style::default().fg(Color::Rgb(171, 178, 191)),
-        ),
-    ])
-}
+/// Build all display lines for the detail view (depth 2).
+pub fn display_detail(info: &DetailInfo) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let header = Style::default().fg(Color::Rgb(97, 175, 239)).add_modifier(ratatui::style::Modifier::BOLD);
+    let dim = Style::default().fg(Color::Rgb(92, 99, 112));
+    let val = Style::default().fg(Color::Rgb(171, 178, 191));
+    let green = Style::default().fg(Color::Rgb(152, 195, 121));
+    let red = Style::default().fg(Color::Rgb(224, 108, 117));
+    let yellow = Style::default().fg(Color::Rgb(229, 192, 123));
 
-pub fn display_port(p: &str) -> Line<'static> {
-    Line::from(vec![
-        Span::styled("  🔌 ", Style::default()),
-        Span::styled(p.to_string(), Style::default().fg(Color::Rgb(229, 192, 123))),
-    ])
+    // Resources
+    lines.push(Line::from(Span::styled("  📊 Resources", header)));
+    if let Some(r) = &info.resources {
+        lines.push(Line::from(vec![
+            Span::styled("     CPU: ", dim),
+            Span::styled(format!("{} cores", r.cpus), val),
+            Span::styled("  |  RAM: ", dim),
+            Span::styled(format!("{}/{}", r.mem_used, r.mem_total), val),
+            Span::styled("  |  Disk: ", dim),
+            Span::styled(r.disk_total.clone(), val),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("     Uptime: ", dim),
+            Span::styled(r.uptime.clone(), val),
+            Span::styled("  |  IP: ", dim),
+            Span::styled(r.ip.clone(), val),
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled("     (not available)", dim)));
+    }
+    lines.push(Line::from(""));
+
+    // Docker
+    lines.push(Line::from(Span::styled(
+        format!("  🐳 Docker ({})", info.docker.len()), header
+    )));
+    if info.docker.is_empty() {
+        lines.push(Line::from(Span::styled("     (none or no docker)", dim)));
+    } else {
+        for d in &info.docker {
+            let color = if d.status.starts_with("Up") { green } else { red };
+            lines.push(Line::from(vec![
+                Span::styled(format!("     {:<20}", d.name), color),
+                Span::styled(format!(" {:<20}", d.image), dim),
+                Span::styled(format!(" {}", d.ports), val),
+            ]));
+        }
+    }
+    lines.push(Line::from(""));
+
+    // Ports
+    lines.push(Line::from(Span::styled(
+        format!("  🔌 Ports ({})", info.ports.len()), header
+    )));
+    if info.ports.is_empty() {
+        lines.push(Line::from(Span::styled("     (none)", dim)));
+    } else {
+        for p in &info.ports {
+            lines.push(Line::from(vec![
+                Span::styled("     ", Style::default()),
+                Span::styled(p.clone(), yellow),
+            ]));
+        }
+    }
+    lines.push(Line::from(""));
+
+    // Snapshots
+    lines.push(Line::from(Span::styled(
+        format!("  📸 Snapshots ({})", info.snapshots.len()), header
+    )));
+    if info.snapshots.is_empty() {
+        lines.push(Line::from(Span::styled("     (none)", dim)));
+    } else {
+        for s in &info.snapshots {
+            lines.push(Line::from(vec![
+                Span::styled(format!("     {:<20}", s.name), val),
+                Span::styled(s.date.clone(), dim),
+            ]));
+        }
+    }
+
+    lines
 }
 
 #[cfg(test)]
