@@ -6,6 +6,14 @@ description = "Clickable window list with [+] and [x] buttons for tmux status ba
 license = "MIT"
 repository = "https://github.com/dalsoop/dalsoop-tmux-tools"
 
+[lib]
+name = "tmux_windowbar"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tmux-windowbar"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
