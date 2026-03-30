@@ -290,6 +290,67 @@ impl App {
         true
     }
 
+    /// Install SSH key on a proxmox-api server, then upgrade to SSH type.
+    fn pve_install_key(&mut self) {
+        if self.pve_depth != 0 { return; }
+        let idx = match self.pve_list.selected() { Some(i) => i, None => return };
+        if idx >= self.pve_servers.len() { return; }
+        let server = &self.pve_servers[idx];
+
+        if server.access == proxmox::AccessType::Ssh {
+            self.status_msg = Some(format!("{} already uses SSH", server.name));
+            return;
+        }
+
+        let password = match &server.password {
+            Some(p) => p.clone(),
+            None => {
+                self.status_msg = Some("No password configured for key install".into());
+                return;
+            }
+        };
+
+        let target = format!("{}@{}", server.user, server.host);
+        self.status_msg = Some(format!("Installing SSH key on {}...", server.name));
+
+        // Use sshpass + ssh-copy-id
+        let ok = std::process::Command::new("sshpass")
+            .args(["-p", &password, "ssh-copy-id",
+                   "-o", "StrictHostKeyChecking=accept-new", &target])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if !ok {
+            self.status_msg = Some("Failed to install SSH key".into());
+            return;
+        }
+
+        // Verify key auth
+        let verify = std::process::Command::new("ssh")
+            .args(["-o", "ConnectTimeout=5", "-o", "BatchMode=yes", &target, "hostname"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success());
+
+        if verify.is_none() {
+            self.status_msg = Some("Key installed but verification failed".into());
+            return;
+        }
+
+        // Update config: proxmox-api → proxmox
+        let server_name = server.name.clone();
+        if let Some(entry) = self.config.ssh.iter_mut().find(|e| e.name == server_name) {
+            entry.r#type = "proxmox".into();
+        }
+        let _ = config_io::save_and_apply(&self.config);
+
+        // Refresh servers
+        self.pve_servers = proxmox::get_servers(&self.config);
+        self.sync_pve_list();
+        self.status_msg = Some(format!("{} upgraded to SSH. Console/Docker now available.", server_name));
+    }
+
     fn pve_start(&mut self) {
         if self.pve_depth != 1 { return; }
         let idx = match self.pve_list.selected() { Some(i) => i, None => return };
@@ -540,6 +601,7 @@ impl App {
             KeyCode::Char('s') if self.tab == Tab::Proxmox => self.pve_start(),
             KeyCode::Char('x') if self.tab == Tab::Proxmox => self.pve_stop_confirm(),
             KeyCode::Char('r') if self.tab == Tab::Proxmox => self.pve_refresh(),
+            KeyCode::Char('k') if self.tab == Tab::Proxmox && self.pve_depth == 0 => self.pve_install_key(),
             _ => {}
         }
         false
@@ -808,6 +870,7 @@ fn render_hint(f: &mut ratatui::Frame, app: &App, area: Rect) {
                         spans.extend([
                             Span::styled("[Enter]", Style::default().fg(GREEN)), Span::raw(" open  "),
                             Span::styled("[c]", Style::default().fg(GREEN)), Span::raw("onnect  "),
+                            Span::styled("[k]", Style::default().fg(BLUE)), Span::raw("ey install  "),
                         ]);
                     } else if app.pve_depth == 1 {
                         spans.extend([
