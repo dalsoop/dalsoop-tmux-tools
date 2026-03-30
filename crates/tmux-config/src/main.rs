@@ -218,8 +218,49 @@ impl App {
         }
     }
 
-    fn pve_console(&mut self) -> bool {
-        if self.pve_depth != 1 { return false; }
+    fn pve_connect(&mut self) -> bool {
+        match self.pve_depth {
+            0 => self.pve_connect_server(),
+            1 => self.pve_connect_container(),
+            _ => false,
+        }
+    }
+
+    /// SSH into the selected Proxmox server itself.
+    fn pve_connect_server(&mut self) -> bool {
+        let idx = match self.pve_list.selected() { Some(i) => i, None => return false };
+        if idx >= self.pve_servers.len() { return false; }
+        let server = &self.pve_servers[idx];
+
+        if server.access == proxmox::AccessType::Api {
+            self.status_msg = Some("SSH not available for API-only servers".into());
+            return false;
+        }
+
+        let session_name = format!("ssh-{}", server.name);
+        let ssh_target = format!("{}@{}", server.user, server.host);
+        let ssh_cmd = format!(
+            "while true; do ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 {ssh_target}; RC=$?; if [ $RC -eq 0 ]; then break; fi; echo '[연결 끊김 - 5초 후 재접속]'; sleep 5; done"
+        );
+
+        let has = std::process::Command::new("tmux")
+            .args(["has-session", "-t", &format!("={session_name}")])
+            .status().map(|s| s.success()).unwrap_or(false);
+        if !has {
+            let _ = std::process::Command::new("tmux")
+                .args(["new-session", "-d", "-s", &session_name, &ssh_cmd])
+                .status();
+        }
+        let _ = std::process::Command::new("tmux")
+            .args(["switch-client", "-t", &format!("={session_name}")])
+            .status();
+        let _ = std::process::Command::new("tmux-sessionbar")
+            .args(["render-status", "left"]).status();
+        true
+    }
+
+    /// Open console to the selected container.
+    fn pve_connect_container(&mut self) -> bool {
         let idx = match self.pve_list.selected() { Some(i) => i, None => return false };
         if idx >= self.pve_containers.len() { return false; }
         let si = self.pve_sel_server.unwrap_or(0);
@@ -495,7 +536,7 @@ impl App {
             // Proxmox: hierarchical navigation
             KeyCode::Enter | KeyCode::Right if self.tab == Tab::Proxmox => self.pve_enter(),
             KeyCode::Backspace | KeyCode::Left if self.tab == Tab::Proxmox => self.pve_back(),
-            KeyCode::Char('c') if self.tab == Tab::Proxmox => return self.pve_console(),
+            KeyCode::Char('c') if self.tab == Tab::Proxmox => return self.pve_connect(),
             KeyCode::Char('s') if self.tab == Tab::Proxmox => self.pve_start(),
             KeyCode::Char('x') if self.tab == Tab::Proxmox => self.pve_stop_confirm(),
             KeyCode::Char('r') if self.tab == Tab::Proxmox => self.pve_refresh(),
@@ -764,7 +805,10 @@ fn render_hint(f: &mut ratatui::Frame, app: &App, area: Rect) {
                 if app.tab == Tab::Proxmox {
                     let mut spans = Vec::new();
                     if app.pve_depth == 0 {
-                        spans.extend([Span::styled("[Enter]", Style::default().fg(GREEN)), Span::raw(" open  ")]);
+                        spans.extend([
+                            Span::styled("[Enter]", Style::default().fg(GREEN)), Span::raw(" open  "),
+                            Span::styled("[c]", Style::default().fg(GREEN)), Span::raw("onnect  "),
+                        ]);
                     } else if app.pve_depth == 1 {
                         spans.extend([
                             Span::styled("[Enter]", Style::default().fg(GREEN)), Span::raw(" docker  "),
