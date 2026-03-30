@@ -101,26 +101,15 @@ fn render_all_windows(config: &Config) -> Result<String> {
         let is_active = sess == current_session && idx == current_window;
         let range_id = format!("_wa{sess}.{idx}");
 
-        let block = if is_active {
-            click(
-                &range_id,
-                &w.active_fg,
-                &w.active_bg,
-                true,
-                &format!(" {sess}.{idx}:{name} "),
-            )
+        let display = format!(" {sess}.{idx}:{name} ");
+        let kill_id = format!("_wx{sess}.{idx}");
+        let (fg, bg, bold) = if is_active {
+            (&w.active_fg, &w.active_bg, true)
         } else {
-            let kill_id = format!("_wx{sess}.{idx}");
-            let mut b = click(
-                &range_id,
-                &w.fg,
-                &w.bg,
-                false,
-                &format!(" {sess}.{idx}:{name} "),
-            );
-            b.push_str(&click(&kill_id, &w.kill_fg, &w.kill_bg, false, " x "));
-            b
+            (&w.fg, &w.bg, false)
         };
+        let mut block = click(&range_id, fg, bg, bold, &display);
+        block.push_str(&click(&kill_id, &w.kill_fg, &w.kill_bg, false, " x "));
 
         parts.push(block);
     }
@@ -174,8 +163,11 @@ fn render_panes(config: &Config) -> Result<String> {
             "bash" | "zsh" | "fish" | "sh" | "dash" | "ksh" | "csh" | "tcsh"
         );
 
+        let kill_id = format!("_px{sess}.{win}.{pane}");
         let block = if is_active {
-            click(&range_id, &w.active_fg, &w.active_bg, true, &display)
+            let mut b = click(&range_id, &w.active_fg, &w.active_bg, true, &display);
+            b.push_str(&click(&kill_id, &w.kill_fg, &w.kill_bg, false, " x "));
+            b
         } else {
             let (fg, bg) = if let Some(c) = config.colors.get(cmd) {
                 (c.fg.clone(), c.bg.clone())
@@ -184,7 +176,6 @@ fn render_panes(config: &Config) -> Result<String> {
             } else {
                 (w.running_fg.clone(), w.running_bg.clone())
             };
-            let kill_id = format!("_px{sess}.{win}.{pane}");
             let mut b = click(&range_id, &fg, &bg, false, &display);
             b.push_str(&click(&kill_id, &w.kill_fg, &w.kill_bg, false, " x "));
             b
@@ -334,11 +325,41 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
         parts.push(block);
     }
 
-    let format = Line::new()
-        .left()
-        .push(&label("Users", &th.users_label))
-        .push(&parts.join(" "))
-        .build();
+    // SSH hosts
+    let mut ssh_parts = Vec::new();
+    let active_sessions =
+        tmux::lines(&["list-sessions", "-F", "#{session_name}"]).unwrap_or_default();
+    for (i, entry) in config.ssh.iter().enumerate() {
+        let range_id = format!("_ssh{i}");
+        let session_name = format!("ssh-{}", entry.name);
+        let has_session = active_sessions.iter().any(|s| *s == session_name);
+
+        let block = if has_session {
+            click(
+                &range_id,
+                &th.ssh_connected_fg,
+                &th.ssh_connected_bg,
+                true,
+                &format!(" {} {} ", entry.emoji, entry.name),
+            )
+        } else {
+            click(
+                &range_id,
+                &entry.fg,
+                &entry.bg,
+                false,
+                &format!(" {} {} ", entry.emoji, entry.name),
+            )
+        };
+        ssh_parts.push(block);
+    }
+
+    let mut line = Line::new().left().push(&label("Users", &th.users_label));
+    line = line.push(&parts.join(" "));
+    if !ssh_parts.is_empty() {
+        line = line.push("  ").push(&ssh_parts.join(" "));
+    }
+    let format = line.build();
     tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
     Ok(())
 }
