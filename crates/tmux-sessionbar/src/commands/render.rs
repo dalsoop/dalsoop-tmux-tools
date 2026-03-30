@@ -25,32 +25,25 @@ fn render_left() -> Result<()> {
 
     let sessions = tmux::lines(&["list-sessions", "-F", "#{session_name}"])?;
 
+    // Use short index-based range IDs to avoid tmux's ~16-byte limit
+    // on mouse_status_range user values.
+    let visible: Vec<&String> = sessions
+        .iter()
+        .filter(|n| tmux::should_show_for_user(n, &view_user))
+        .collect();
+
     let mut parts = Vec::new();
-    for name in &sessions {
-        if !tmux::should_show_for_user(name, &view_user) {
-            continue;
-        }
-        let mut block = if *name == current {
-            click(
-                name,
-                &sl.active_fg,
-                &sl.active_bg,
-                true,
-                &format!(" {name} "),
-            )
+    for (i, name) in visible.iter().enumerate() {
+        let sid = format!("_s{i}");
+        let mut block = if **name == current {
+            click(&sid, &sl.active_fg, &sl.active_bg, true, &format!(" {name} "))
         } else {
-            click(
-                name,
-                &sl.inactive_fg,
-                &sl.inactive_bg,
-                false,
-                &format!(" {name} "),
-            )
+            click(&sid, &sl.inactive_fg, &sl.inactive_bg, false, &format!(" {name} "))
         };
 
         if sl.show_kill_button {
             block.push_str(&click(
-                &format!("_k{name}"),
+                &format!("_k{i}"),
                 &sl.kill_fg,
                 &config.status.bg,
                 false,
