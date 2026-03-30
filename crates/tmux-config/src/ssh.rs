@@ -1,136 +1,173 @@
-use anyhow::Result;
-use dialoguer::{Input, Select, theme::ColorfulTheme};
-use tmux_windowbar::config::template::{SshEntry, load_config};
+use tmux_windowbar::config::template::{Config, SshEntry};
 
-use crate::save_and_apply;
+use crate::form::{Field, Form};
 
-pub fn manage() -> Result<()> {
-    loop {
-        let config = load_config()?;
+/// Build form fields for adding a new SSH entry.
+pub fn add_form() -> Form {
+    Form::new(
+        vec![
+            Field { label: "Name", value: String::new() },
+            Field { label: "Host", value: String::new() },
+            Field { label: "User", value: String::new() },
+            Field { label: "Emoji", value: "\u{1f5a5}\u{fe0f}".into() },
+        ],
+        None,
+    )
+}
 
-        let mut items: Vec<String> = config.ssh.iter().map(|s| {
-            let user = s.user.as_deref().unwrap_or("");
-            let target = if user.is_empty() {
-                s.host.clone()
-            } else {
-                format!("{user}@{}", s.host)
-            };
-            format!("{} {} ({})", s.emoji, s.name, target)
-        }).collect();
-        items.push("+ Add new".into());
-        items.push("<- Back".into());
+/// Build form fields pre-filled from an existing entry.
+pub fn edit_form(config: &Config, idx: usize) -> Form {
+    let e = &config.ssh[idx];
+    Form::new(
+        vec![
+            Field { label: "Name", value: e.name.clone() },
+            Field { label: "Host", value: e.host.clone() },
+            Field { label: "User", value: e.user.clone().unwrap_or_default() },
+            Field { label: "Emoji", value: e.emoji.clone() },
+        ],
+        Some(idx),
+    )
+}
 
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("SSH Hosts")
-            .items(&items)
-            .default(0)
-            .interact()?;
+/// Apply a completed form to the config.
+pub fn apply_form(config: &mut Config, form: &Form) {
+    let values = form.values();
+    let name = values[0].to_owned();
+    let host = values[1].to_owned();
+    let user_str = values[2].to_owned();
+    let emoji = values[3].to_owned();
+    let user = if user_str.is_empty() { None } else { Some(user_str) };
 
-        let ssh_count = config.ssh.len();
-        if selection == ssh_count {
-            add()?;
-        } else if selection == ssh_count + 1 {
-            break;
-        } else {
-            detail(selection)?;
+    match form.edit_idx {
+        None => {
+            config.ssh.push(SshEntry {
+                name,
+                host,
+                user,
+                emoji,
+                fg: "#abb2bf".into(),
+                bg: "#3e4452".into(),
+            });
+        }
+        Some(idx) => {
+            let e = &mut config.ssh[idx];
+            e.name = name;
+            e.host = host;
+            e.user = user;
+            e.emoji = emoji;
         }
     }
-    Ok(())
 }
 
-fn detail(idx: usize) -> Result<()> {
-    let config = load_config()?;
-    let entry = &config.ssh[idx];
-    println!("  {} {} ({}@{})", entry.emoji, entry.name, entry.user.as_deref().unwrap_or("-"), entry.host);
-
-    let actions = &["Edit", "Delete", "Back"];
-    let action = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Action")
-        .items(actions)
-        .default(0)
-        .interact()?;
-
-    match action {
-        0 => edit(idx)?,
-        1 => delete(idx)?,
-        _ => {}
-    }
-    Ok(())
+/// Format a single SSH entry for list display.
+pub fn display(e: &SshEntry) -> String {
+    let user = e.user.as_deref().unwrap_or("");
+    let target = if user.is_empty() {
+        e.host.clone()
+    } else {
+        format!("{user}@{}", e.host)
+    };
+    format!("{} {}  {}", e.emoji, e.name, target)
 }
 
-fn add() -> Result<()> {
-    let theme = ColorfulTheme::default();
-    let name: String = Input::with_theme(&theme).with_prompt("Name").interact_text()?;
-    let host: String = Input::with_theme(&theme).with_prompt("Host").interact_text()?;
-    let user: String = Input::with_theme(&theme)
-        .with_prompt("User (optional)")
-        .default(String::new())
-        .interact_text()?;
-    let emoji: String = Input::with_theme(&theme)
-        .with_prompt("Emoji")
-        .default("\u{1f5a5}\u{fe0f}".into())
-        .interact_text()?;
-
-    let mut config = load_config()?;
-    config.ssh.push(SshEntry {
-        name,
-        host,
-        user: if user.is_empty() { None } else { Some(user) },
-        emoji,
-        fg: "#abb2bf".into(),
-        bg: "#3e4452".into(),
-    });
-    save_and_apply(&config)?;
-    println!("Added");
-    Ok(())
-}
-
-fn edit(idx: usize) -> Result<()> {
-    let mut config = load_config()?;
-    let entry = &config.ssh[idx];
-    let theme = ColorfulTheme::default();
-
-    let name: String = Input::with_theme(&theme)
-        .with_prompt("Name")
-        .default(entry.name.clone())
-        .interact_text()?;
-    let host: String = Input::with_theme(&theme)
-        .with_prompt("Host")
-        .default(entry.host.clone())
-        .interact_text()?;
-    let user: String = Input::with_theme(&theme)
-        .with_prompt("User (optional)")
-        .default(entry.user.clone().unwrap_or_default())
-        .interact_text()?;
-    let emoji: String = Input::with_theme(&theme)
-        .with_prompt("Emoji")
-        .default(entry.emoji.clone())
-        .interact_text()?;
-
-    let e = &mut config.ssh[idx];
-    e.name = name;
-    e.host = host;
-    e.user = if user.is_empty() { None } else { Some(user) };
-    e.emoji = emoji;
-
-    save_and_apply(&config)?;
-    println!("Updated");
-    Ok(())
-}
-
-fn delete(idx: usize) -> Result<()> {
-    let mut config = load_config()?;
-    let name = config.ssh[idx].name.clone();
-
-    let confirm = dialoguer::Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt(format!("Delete '{name}'?"))
-        .default(false)
-        .interact()?;
-
-    if confirm {
+/// Delete entry at idx.
+pub fn delete(config: &mut Config, idx: usize) {
+    if idx < config.ssh.len() {
         config.ssh.remove(idx);
-        save_and_apply(&config)?;
-        println!("Deleted '{name}'");
     }
-    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tmux_windowbar::config::template::default_config;
+
+    #[test]
+    fn add_form_has_four_fields() {
+        let f = add_form();
+        assert_eq!(f.fields.len(), 4);
+        assert_eq!(f.edit_idx, None);
+    }
+
+    #[test]
+    fn edit_form_prefills_values() {
+        let mut config = default_config();
+        config.ssh.push(SshEntry {
+            name: "proxmox".into(),
+            host: "192.168.2.50".into(),
+            user: Some("root".into()),
+            emoji: "\u{1f5a5}\u{fe0f}".into(),
+            fg: "#abb2bf".into(),
+            bg: "#3e4452".into(),
+        });
+        let f = edit_form(&config, 0);
+        assert_eq!(f.fields[0].value, "proxmox");
+        assert_eq!(f.fields[1].value, "192.168.2.50");
+        assert_eq!(f.fields[2].value, "root");
+        assert_eq!(f.edit_idx, Some(0));
+    }
+
+    #[test]
+    fn apply_form_adds_entry() {
+        let mut config = default_config();
+        let initial_count = config.ssh.len();
+        let mut form = add_form();
+        form.fields[0].value = "myhost".into();
+        form.fields[1].value = "10.0.0.1".into();
+        form.fields[2].value = "admin".into();
+        form.fields[3].value = "\u{1f4bb}".into();
+        apply_form(&mut config, &form);
+        assert_eq!(config.ssh.len(), initial_count + 1);
+        let added = config.ssh.last().unwrap();
+        assert_eq!(added.name, "myhost");
+        assert_eq!(added.user, Some("admin".into()));
+    }
+
+    #[test]
+    fn apply_form_edits_entry() {
+        let mut config = default_config();
+        config.ssh.push(SshEntry {
+            name: "old".into(),
+            host: "1.1.1.1".into(),
+            user: None,
+            emoji: "\u{1f5a5}\u{fe0f}".into(),
+            fg: "#abb2bf".into(),
+            bg: "#3e4452".into(),
+        });
+        let mut form = edit_form(&config, 0);
+        form.fields[0].value = "new".into();
+        apply_form(&mut config, &form);
+        assert_eq!(config.ssh[0].name, "new");
+    }
+
+    #[test]
+    fn delete_removes_entry() {
+        let mut config = default_config();
+        config.ssh.push(SshEntry {
+            name: "to-del".into(),
+            host: "1.1.1.1".into(),
+            user: None,
+            emoji: "\u{1f5a5}\u{fe0f}".into(),
+            fg: "#abb2bf".into(),
+            bg: "#3e4452".into(),
+        });
+        assert_eq!(config.ssh.len(), 1);
+        delete(&mut config, 0);
+        assert_eq!(config.ssh.len(), 0);
+    }
+
+    #[test]
+    fn display_formats_correctly() {
+        let e = SshEntry {
+            name: "proxmox".into(),
+            host: "192.168.2.50".into(),
+            user: Some("root".into()),
+            emoji: "\u{1f5a5}\u{fe0f}".into(),
+            fg: "#abb2bf".into(),
+            bg: "#3e4452".into(),
+        };
+        let s = display(&e);
+        assert!(s.contains("proxmox"));
+        assert!(s.contains("root@192.168.2.50"));
+    }
 }
