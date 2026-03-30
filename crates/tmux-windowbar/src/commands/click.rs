@@ -2,7 +2,6 @@ use crate::config::template::load_config;
 use anyhow::{Result, bail};
 use tmux_fmt::tmux;
 
-const RENAME_FILE: &str = "/tmp/tmux-pending-rename.conf";
 
 pub fn run(range: &str) -> Result<()> {
     if let Some(idx_str) = range.strip_prefix("_app") {
@@ -76,17 +75,17 @@ pub fn run_dblclick(range: &str) -> Result<()> {
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-'))
         && !range.starts_with('_')
     {
-        write_rename_prompt(&format!(
+        tmux_prompt(&format!(
             "command-prompt -I \"{range}\" -p \"rename session:\" \"rename-session '%%'\""
         ))?;
     } else if let Some(idx) = range.strip_prefix("_ws") {
-        write_rename_prompt(&format!(
+        tmux_prompt(&format!(
             "command-prompt -p \"rename window {idx}:\" \"rename-window -t :{idx} '%%'\""
         ))?;
     } else if let Some(target) = range.strip_prefix("_wa")
         && let Some((sess, win)) = target.split_once('.')
     {
-        write_rename_prompt(&format!(
+        tmux_prompt(&format!(
             "command-prompt -p \"rename window {sess}:{win}:\" \"rename-window -t ={sess}:{win} '%%'\""
         ))?;
     }
@@ -130,7 +129,15 @@ fn switch_to_existing_app(command: &str) -> Result<bool> {
     Ok(false)
 }
 
-fn write_rename_prompt(content: &str) -> Result<()> {
-    std::fs::write(RENAME_FILE, content)?;
+/// Execute a tmux command string directly (e.g. command-prompt).
+fn tmux_prompt(cmd: &str) -> Result<()> {
+    // Parse the command string into args for tmux
+    // The command is a single tmux command like "command-prompt -I ..."
+    let status = std::process::Command::new("sh")
+        .args(["-c", &format!("tmux {cmd}")])
+        .status()?;
+    if !status.success() {
+        anyhow::bail!("tmux command failed: {cmd}");
+    }
     Ok(())
 }
