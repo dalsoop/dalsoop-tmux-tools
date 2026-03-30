@@ -178,49 +178,6 @@ fn render_panes(config: &Config) -> Result<String> {
     Ok(result)
 }
 
-/// Get current view mode from tmux variable @view_mode
-fn get_view_mode() -> String {
-    tmux::query_or(&["show", "-gv", "@view_mode"], "all")
-}
-
-/// Returns view switcher string for embedding in other lines
-pub fn render_view_switcher() -> String {
-    let config = load_config().unwrap_or_else(|_| crate::config::template::default_config());
-    let th = &config.theme;
-    let mode = get_view_mode();
-
-    let modes = [
-        ("_vAll", "\u{1f310}", &th.view_all),
-        ("_vUser", "\u{1f464}", &th.view_user),
-        ("_vSession", "\u{1f4cb}", &th.view_session),
-        ("_vCompact", "\u{26a1}", &th.view_compact),
-    ];
-
-    let mut parts = Vec::new();
-    for (id, emoji, color) in &modes {
-        let mode_name = id.strip_prefix("_v").unwrap_or(id).to_lowercase();
-        if mode == mode_name {
-            parts.push(click(
-                id,
-                &th.view_active_fg,
-                color,
-                true,
-                &format!(" {emoji} "),
-            ));
-        } else {
-            parts.push(click(
-                id,
-                &th.view_inactive_fg,
-                &th.view_inactive_bg,
-                false,
-                &format!(" {emoji} "),
-            ));
-        }
-    }
-
-    parts.join("")
-}
-
 pub fn run() -> Result<()> {
     if !tmux::acquire_guard("windowbar_render", 100) {
         return Ok(());

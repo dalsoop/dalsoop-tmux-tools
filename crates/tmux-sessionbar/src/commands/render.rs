@@ -100,14 +100,6 @@ fn render_left() -> Result<()> {
 
     let right_content = format!("{sys_stats}{}", right_parts.join(""));
 
-    let view_switcher = std::process::Command::new("tmux-windowbar")
-        .args(["render-view"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_default();
-
     let window_section = std::process::Command::new("tmux-windowbar")
         .args(["render"])
         .output()
@@ -116,7 +108,7 @@ fn render_left() -> Result<()> {
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string());
 
     let session_label = label("Sessions", &th.label_fg);
-    let right_section = format!("{right_content} {view_switcher}{clear_btn}");
+    let right_section = format!("{right_content}{clear_btn}");
     let format = if let Some(windows) = window_section {
         Line::new()
             .left()

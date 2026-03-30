@@ -5,16 +5,7 @@ use tmux_fmt::tmux;
 const RENAME_FILE: &str = "/tmp/tmux-pending-rename.conf";
 
 pub fn run(range: &str) -> Result<()> {
-    if let Some(mode) = range.strip_prefix("_v") {
-        let mode = mode.to_lowercase();
-        tmux::run(&["set", "-g", "@view_mode", &mode])?;
-        if mode == "all" {
-            tmux::run_quiet(&["set", "-gu", "@view_user"]);
-        }
-        let _ = std::process::Command::new("tmux-sessionbar")
-            .args(["render-status", "left"])
-            .status();
-    } else if let Some(idx_str) = range.strip_prefix("_app") {
+    if let Some(idx_str) = range.strip_prefix("_app") {
         if let Ok(idx) = idx_str.parse::<usize>() {
             let config = load_config()?;
             if let Some(app) = config.apps.get(idx) {
