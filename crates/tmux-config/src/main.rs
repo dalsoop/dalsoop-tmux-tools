@@ -925,6 +925,13 @@ fn render_hint(f: &mut ratatui::Frame, app: &App, area: Rect) {
 // ─── entry point ─────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() > 1 {
+        return cli_dispatch(&args[1..]);
+    }
+
+    // No args → TUI mode
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, crossterm::event::EnableMouseCapture)?;
@@ -941,6 +948,229 @@ fn main() -> Result<()> {
     terminal.show_cursor()?;
 
     result
+}
+
+// ─── CLI mode ────────────────────────────────────────────────────────────────
+
+fn cli_dispatch(args: &[String]) -> Result<()> {
+    let cmd = args[0].as_str();
+    match cmd {
+        "help" | "--help" | "-h" => {
+            println!("tmux-config — tmux status bar configuration manager");
+            println!();
+            println!("Usage: tmux-config [command]");
+            println!();
+            println!("  (no args)              Open TUI");
+            println!();
+            println!("  ssh-list               List SSH hosts");
+            println!("  ssh-add <name> <host> [user] [type]");
+            println!("                         Add SSH host (type: ssh|proxmox|proxmox-api)");
+            println!("  ssh-rm <name>          Remove SSH host");
+            println!("  ssh-connect <name>     Connect to SSH host (tmux session)");
+            println!();
+            println!("  app-list               List apps");
+            println!("  app-add <cmd> [emoji]  Add app");
+            println!("  app-rm <cmd>           Remove app");
+            println!();
+            println!("  pve-list               List Proxmox servers");
+            println!("  pve-ct <server>        List containers on server");
+            println!("  pve-start <server> <vmid>  Start container");
+            println!("  pve-stop <server> <vmid>   Stop container");
+            println!("  pve-key <server>       Install SSH key on API server");
+            Ok(())
+        }
+
+        "ssh-list" => {
+            let config = load_config()?;
+            for e in &config.ssh {
+                let user = e.user.as_deref().unwrap_or("-");
+                println!("{:<15} {}@{:<20} [{}]", e.name, user, e.host, e.r#type);
+            }
+            Ok(())
+        }
+
+        "ssh-add" => {
+            if args.len() < 3 {
+                anyhow::bail!("Usage: ssh-add <name> <host> [user] [type]");
+            }
+            let mut config = load_config()?;
+            let name = args[1].clone();
+            let host = args[2].clone();
+            let user = args.get(3).filter(|s| !s.is_empty()).cloned();
+            let entry_type = args.get(4).cloned().unwrap_or_else(|| "ssh".into());
+            config.ssh.push(tmux_windowbar::config::template::SshEntry {
+                name: name.clone(), host, user,
+                emoji: "\u{1f5a5}\u{fe0f}".into(),
+                fg: "#abb2bf".into(), bg: "#3e4452".into(),
+                r#type: entry_type, password: None, port: None,
+            });
+            save_and_apply(&config)?;
+            println!("Added '{name}'");
+            Ok(())
+        }
+
+        "ssh-rm" => {
+            if args.len() < 2 { anyhow::bail!("Usage: ssh-rm <name>"); }
+            let mut config = load_config()?;
+            let name = &args[1];
+            let before = config.ssh.len();
+            config.ssh.retain(|e| e.name != *name);
+            if config.ssh.len() == before {
+                anyhow::bail!("SSH host '{name}' not found");
+            }
+            save_and_apply(&config)?;
+            println!("Removed '{name}'");
+            Ok(())
+        }
+
+        "ssh-connect" => {
+            if args.len() < 2 { anyhow::bail!("Usage: ssh-connect <name>"); }
+            let config = load_config()?;
+            let name = &args[1];
+            let entry = config.ssh.iter().find(|e| e.name == *name)
+                .ok_or_else(|| anyhow::anyhow!("SSH host '{name}' not found"))?;
+            let user = entry.user.as_deref().unwrap_or("root");
+            let target = format!("{user}@{}", entry.host);
+            let session_name = format!("ssh-{name}");
+            let ssh_cmd = format!(
+                "while true; do ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 {target}; RC=$?; if [ $RC -eq 0 ]; then break; fi; echo '[연결 끊김 - 5초 후 재접속]'; sleep 5; done"
+            );
+            let has = std::process::Command::new("tmux")
+                .args(["has-session", "-t", &format!("={session_name}")])
+                .status().map(|s| s.success()).unwrap_or(false);
+            if !has {
+                std::process::Command::new("tmux")
+                    .args(["new-session", "-d", "-s", &session_name, &ssh_cmd])
+                    .status()?;
+            }
+            std::process::Command::new("tmux")
+                .args(["switch-client", "-t", &format!("={session_name}")])
+                .status()?;
+            Ok(())
+        }
+
+        "app-list" => {
+            let config = load_config()?;
+            for a in &config.apps {
+                println!("{} {:<20} [{}]", a.emoji, a.command, a.mode);
+            }
+            Ok(())
+        }
+
+        "app-add" => {
+            if args.len() < 2 { anyhow::bail!("Usage: app-add <command> [emoji]"); }
+            let mut config = load_config()?;
+            let command = args[1].clone();
+            let emoji = args.get(2).cloned().unwrap_or_else(|| "🔧".into());
+            config.apps.push(tmux_windowbar::config::template::AppEntry {
+                emoji, command: command.clone(),
+                fg: "#282c34".into(), bg: "#61afef".into(), mode: "window".into(),
+            });
+            save_and_apply(&config)?;
+            println!("Added '{command}'");
+            Ok(())
+        }
+
+        "app-rm" => {
+            if args.len() < 2 { anyhow::bail!("Usage: app-rm <command>"); }
+            let mut config = load_config()?;
+            let cmd = &args[1];
+            let before = config.apps.len();
+            config.apps.retain(|a| a.command != *cmd);
+            if config.apps.len() == before {
+                anyhow::bail!("App '{cmd}' not found");
+            }
+            save_and_apply(&config)?;
+            println!("Removed '{cmd}'");
+            Ok(())
+        }
+
+        "pve-list" => {
+            let config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            for s in &servers {
+                let tag = match s.access { proxmox::AccessType::Ssh => "ssh", proxmox::AccessType::Api => "api" };
+                println!("{:<15} {}@{:<20} [{}]", s.name, s.user, s.host, tag);
+            }
+            Ok(())
+        }
+
+        "pve-ct" => {
+            if args.len() < 2 { anyhow::bail!("Usage: pve-ct <server-name>"); }
+            let config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            let server = servers.iter().find(|s| s.name == args[1])
+                .ok_or_else(|| anyhow::anyhow!("Server '{}' not found", args[1]))?;
+            let cts = proxmox::fetch_containers(server);
+            for c in &cts {
+                println!("{:>6} {:<24} {:<10} {}", c.vmid, c.name, c.status, c.kind);
+            }
+            Ok(())
+        }
+
+        "pve-start" => {
+            if args.len() < 3 { anyhow::bail!("Usage: pve-start <server> <vmid>"); }
+            let config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            let server = servers.iter().find(|s| s.name == args[1])
+                .ok_or_else(|| anyhow::anyhow!("Server '{}' not found", args[1]))?;
+            let vmid: u32 = args[2].parse()?;
+            let cts = proxmox::fetch_containers(server);
+            let ct = cts.iter().find(|c| c.vmid == vmid)
+                .ok_or_else(|| anyhow::anyhow!("Container {vmid} not found"))?;
+            proxmox::start_container(server, ct);
+            println!("Started {vmid}");
+            Ok(())
+        }
+
+        "pve-stop" => {
+            if args.len() < 3 { anyhow::bail!("Usage: pve-stop <server> <vmid>"); }
+            let config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            let server = servers.iter().find(|s| s.name == args[1])
+                .ok_or_else(|| anyhow::anyhow!("Server '{}' not found", args[1]))?;
+            let vmid: u32 = args[2].parse()?;
+            let cts = proxmox::fetch_containers(server);
+            let ct = cts.iter().find(|c| c.vmid == vmid)
+                .ok_or_else(|| anyhow::anyhow!("Container {vmid} not found"))?;
+            proxmox::stop_container(server, ct);
+            println!("Stopped {vmid}");
+            Ok(())
+        }
+
+        "pve-key" => {
+            if args.len() < 2 { anyhow::bail!("Usage: pve-key <server-name>"); }
+            let mut config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            let server = servers.iter().find(|s| s.name == args[1])
+                .ok_or_else(|| anyhow::anyhow!("Server '{}' not found", args[1]))?;
+            if server.access == proxmox::AccessType::Ssh {
+                println!("{} already uses SSH", server.name);
+                return Ok(());
+            }
+            let password = server.password.as_deref()
+                .ok_or_else(|| anyhow::anyhow!("No password configured"))?;
+            let target = format!("{}@{}", server.user, server.host);
+            let ok = std::process::Command::new("sshpass")
+                .args(["-p", password, "ssh-copy-id", "-o", "StrictHostKeyChecking=accept-new", &target])
+                .status().map(|s| s.success()).unwrap_or(false);
+            if !ok { anyhow::bail!("Failed to install SSH key"); }
+            // Upgrade config
+            let name = server.name.clone();
+            if let Some(entry) = config.ssh.iter_mut().find(|e| e.name == name) {
+                entry.r#type = "proxmox".into();
+            }
+            save_and_apply(&config)?;
+            println!("{name} upgraded to SSH");
+            Ok(())
+        }
+
+        _ => {
+            eprintln!("Unknown command: {cmd}");
+            eprintln!("Run 'tmux-config help' for usage");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
