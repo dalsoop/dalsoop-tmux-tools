@@ -2,4 +2,5 @@
 resolver = "3"
 members = [
     "crates/tmux-fmt", "crates/tmux-sessionbar", "crates/tmux-windowbar",
+    "crates/tmux-config",
 ]
