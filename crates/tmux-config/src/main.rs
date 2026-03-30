@@ -1131,6 +1131,10 @@ fn cli_dispatch(args: &[String]) -> Result<()> {
             println!("  pve-start <server> <vmid>  Start container");
             println!("  pve-stop <server> <vmid>   Stop container");
             println!("  pve-key <server>       Install SSH key on API server");
+            println!();
+            println!("  connect-all            Open tmux sessions for all SSH hosts");
+            println!("  exec-all <command>     Run command on all SSH hosts");
+            println!("  status                 Check connectivity of all hosts");
             Ok(())
         }
 
@@ -1316,6 +1320,117 @@ fn cli_dispatch(args: &[String]) -> Result<()> {
             }
             save_and_apply(&config)?;
             println!("{name} upgraded to SSH");
+            Ok(())
+        }
+
+        "connect-all" => {
+            let config = load_config()?;
+            for e in &config.ssh {
+                if e.r#type == "proxmox-api" { continue; } // skip API-only
+                let user = e.user.as_deref().unwrap_or("root");
+                let target = format!("{user}@{}", e.host);
+                let session_name = format!("ssh-{}", e.name);
+
+                // Check connectivity first
+                let reachable = std::process::Command::new("ssh")
+                    .args(["-o", "ConnectTimeout=3", "-o", "BatchMode=yes", &target, "echo ok"])
+                    .output().map(|o| o.status.success()).unwrap_or(false);
+                if !reachable {
+                    println!("  ✗ {:<15} unreachable", e.name);
+                    continue;
+                }
+
+                let has = std::process::Command::new("tmux")
+                    .args(["has-session", "-t", &format!("={session_name}")])
+                    .status().map(|s| s.success()).unwrap_or(false);
+                if has {
+                    println!("  ✓ {:<15} already connected", e.name);
+                    continue;
+                }
+
+                let ssh_cmd = format!(
+                    "while true; do ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 {target}; RC=$?; if [ $RC -eq 0 ]; then break; fi; echo '[연결 끊김 - 5초 후 재접속]'; sleep 5; done"
+                );
+                let ok = std::process::Command::new("tmux")
+                    .args(["new-session", "-d", "-s", &session_name, &ssh_cmd])
+                    .status().map(|s| s.success()).unwrap_or(false);
+                if ok {
+                    println!("  ✓ {:<15} connected", e.name);
+                } else {
+                    println!("  ✗ {:<15} failed to create session", e.name);
+                }
+            }
+            // Refresh status bar
+            let _ = std::process::Command::new("tmux-sessionbar")
+                .args(["render-status", "left"]).status();
+            Ok(())
+        }
+
+        "exec-all" => {
+            if args.len() < 2 { anyhow::bail!("Usage: exec-all <command>"); }
+            let remote_cmd = args[1..].join(" ");
+            let config = load_config()?;
+            for e in &config.ssh {
+                if e.r#type == "proxmox-api" { continue; }
+                let user = e.user.as_deref().unwrap_or("root");
+                let target = format!("{user}@{}", e.host);
+                print!("  {:<15} ", e.name);
+                let output = std::process::Command::new("ssh")
+                    .args(["-o", "ConnectTimeout=5", "-o", "BatchMode=yes", &target, &remote_cmd])
+                    .output();
+                match output {
+                    Ok(o) if o.status.success() => {
+                        let out = String::from_utf8_lossy(&o.stdout);
+                        let first_line = out.lines().next().unwrap_or("");
+                        println!("✓ {first_line}");
+                    }
+                    Ok(o) => {
+                        let err = String::from_utf8_lossy(&o.stderr);
+                        let first_line = err.lines().next().unwrap_or("failed");
+                        println!("✗ {first_line}");
+                    }
+                    Err(e) => println!("✗ {e}"),
+                }
+            }
+            Ok(())
+        }
+
+        "status" => {
+            let config = load_config()?;
+            for e in &config.ssh {
+                let user = e.user.as_deref().unwrap_or("root");
+                let target = format!("{user}@{}", e.host);
+                print!("  {:<15} {:<25} [{:<10}] ", e.name, target, e.r#type);
+
+                if e.r#type == "proxmox-api" {
+                    // Check API
+                    let url = format!("https://{}:{}/api2/json/version",
+                        e.host, e.port.unwrap_or(8006));
+                    let ok = std::process::Command::new("curl")
+                        .args(["-sk", "--connect-timeout", "3", &url])
+                        .output().map(|o| o.status.success() && !o.stdout.is_empty())
+                        .unwrap_or(false);
+                    println!("{}", if ok { "✓ api" } else { "✗ unreachable" });
+                } else {
+                    // Check SSH
+                    let ok = std::process::Command::new("ssh")
+                        .args(["-o", "ConnectTimeout=3", "-o", "BatchMode=yes", &target, "echo ok"])
+                        .output().map(|o| o.status.success()).unwrap_or(false);
+
+                    // Check tmux session
+                    let session = format!("ssh-{}", e.name);
+                    let has_session = std::process::Command::new("tmux")
+                        .args(["has-session", "-t", &format!("={session}")])
+                        .status().map(|s| s.success()).unwrap_or(false);
+
+                    match (ok, has_session) {
+                        (true, true)   => println!("✓ ssh + session"),
+                        (true, false)  => println!("✓ ssh (no session)"),
+                        (false, true)  => println!("✗ unreachable (stale session)"),
+                        (false, false) => println!("✗ unreachable"),
+                    }
+                }
+            }
             Ok(())
         }
 
