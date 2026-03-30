@@ -227,7 +227,13 @@ impl App {
         let server = &self.pve_servers[si];
         let ct = &self.pve_containers[idx];
         let session_name = format!("ct-{}", ct.vmid);
-        let cmd = proxmox::console_cmd(server, ct);
+        let cmd = match proxmox::console_cmd(server, ct) {
+            Some(c) => c,
+            None => {
+                self.status_msg = Some("Console not available for API-only servers".into());
+                return false;
+            }
+        };
 
         let has = std::process::Command::new("tmux")
             .args(["has-session", "-t", &format!("={session_name}")])

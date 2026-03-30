@@ -37,9 +37,15 @@ pub struct SshEntry {
     pub fg: String,
     #[serde(default = "default_ssh_bg")]
     pub bg: String,
-    /// "ssh" (default) or "proxmox"
+    /// "ssh" (default), "proxmox" (SSH-based), or "proxmox-api" (REST API)
     #[serde(default = "default_ssh_type")]
     pub r#type: String,
+    /// Password for API auth (proxmox-api type only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    /// API port (default 8006, for proxmox-api type)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
 }
 
 fn default_ssh_type() -> String {

@@ -52,6 +52,8 @@ pub fn apply_form(config: &mut Config, form: &Form) {
                 fg: "#abb2bf".into(),
                 bg: "#3e4452".into(),
                 r#type: entry_type,
+                password: None,
+                port: None,
             });
         }
         Some(idx) => {
@@ -107,6 +109,8 @@ mod tests {
             fg: "#abb2bf".into(),
             bg: "#3e4452".into(),
             r#type: "ssh".into(),
+            password: None,
+            port: None,
         });
         let f = edit_form(&config, 0);
         assert_eq!(f.fields[0].value, "proxmox");
@@ -142,6 +146,8 @@ mod tests {
             fg: "#abb2bf".into(),
             bg: "#3e4452".into(),
             r#type: "ssh".into(),
+            password: None,
+            port: None,
         });
         let mut form = edit_form(&config, 0);
         form.fields[0].value = "new".into();
@@ -160,6 +166,8 @@ mod tests {
             fg: "#abb2bf".into(),
             bg: "#3e4452".into(),
             r#type: "ssh".into(),
+            password: None,
+            port: None,
         });
         assert_eq!(config.ssh.len(), 1);
         delete(&mut config, 0);
@@ -176,6 +184,8 @@ mod tests {
             fg: "#abb2bf".into(),
             bg: "#3e4452".into(),
             r#type: "ssh".into(),
+            password: None,
+            port: None,
         };
         let s = display(&e);
         assert!(s.contains("proxmox"));
