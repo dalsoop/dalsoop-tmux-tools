@@ -32,7 +32,8 @@ fn kill_session(sess: &str) -> Result<()> {
 
     let safe = sanitize_tmux(sess);
     let kill_cmd = if current == sess {
-        format!("switch-client -n ; kill-session -t ={safe}")
+        // Try last (previous) session first, fall back to next
+        format!("switch-client -l || switch-client -n ; kill-session -t ={safe}")
     } else {
         format!("kill-session -t ={safe}")
     };
