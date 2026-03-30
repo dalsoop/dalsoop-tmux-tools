@@ -68,6 +68,7 @@ struct App {
     pve_containers: Vec<Container>,
     pve_sel_ct:     Option<usize>,
     pve_detail:     Option<proxmox::DetailInfo>,
+    pve_host_info:  Option<proxmox::HostInfo>,
 }
 
 impl App {
@@ -91,6 +92,7 @@ impl App {
             pve_containers: Vec::new(),
             pve_sel_ct: None,
             pve_detail: None,
+            pve_host_info: None,
         };
         app.sync_lengths();
         app
@@ -136,7 +138,8 @@ impl App {
                 let idx = match self.pve_list.selected() { Some(i) => i, None => return };
                 if idx >= self.pve_servers.len() { return; }
                 self.pve_sel_server = Some(idx);
-                self.status_msg = Some("Loading containers...".into());
+                self.status_msg = Some("Loading host info + containers...".into());
+                self.pve_host_info = proxmox::fetch_host_info(&self.pve_servers[idx]);
                 self.pve_containers = proxmox::fetch_containers(&self.pve_servers[idx]);
                 self.pve_depth = 1;
                 self.sync_pve_list();
@@ -180,6 +183,7 @@ impl App {
                 self.pve_depth = 0;
                 self.pve_containers.clear();
                 self.pve_sel_server = None;
+                self.pve_host_info = None;
                 self.sync_pve_list();
                 self.status_msg = None;
             }
@@ -921,9 +925,20 @@ fn render_proxmox_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
         0 => app.pve_servers.iter()
             .map(|s| ListItem::new(proxmox::display_server(s)))
             .collect(),
-        1 => app.pve_containers.iter()
-            .map(|c| ListItem::new(proxmox::display_container(c)))
-            .collect(),
+        1 => {
+            let mut items: Vec<ListItem> = Vec::new();
+            // Host info header
+            if let Some(hi) = &app.pve_host_info {
+                for line in proxmox::display_host_info(hi) {
+                    items.push(ListItem::new(line));
+                }
+            }
+            // Container list
+            for c in &app.pve_containers {
+                items.push(ListItem::new(proxmox::display_container(c)));
+            }
+            items
+        }
         _ => {
             if let Some(detail) = &app.pve_detail {
                 proxmox::display_detail(detail).into_iter()

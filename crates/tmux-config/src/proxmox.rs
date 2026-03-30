@@ -468,6 +468,83 @@ fn fetch_snapshots(server: &ProxmoxServer, c: &Container) -> Vec<Snapshot> {
         .collect()
 }
 
+// ── Host info ──
+
+#[derive(Clone, Debug)]
+pub struct HostInfo {
+    pub hostname: String,
+    pub kernel: String,
+    pub cpu_model: String,
+    pub cpu_cores: String,
+    pub mem_used: String,
+    pub mem_total: String,
+    pub uptime: String,
+    pub load: String,
+    pub pve_version: String,
+}
+
+pub fn fetch_host_info(server: &ProxmoxServer) -> Option<HostInfo> {
+    let cmd = r#"echo "hostname:$(hostname)" && echo "kernel:$(uname -r)" && echo "cpu:$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs)" && echo "cores:$(nproc)" && echo "mem:$(free -m | awk '/Mem/{print $3"/"$2"MB"}')" && echo "uptime:$(uptime -p 2>/dev/null || uptime)" && echo "load:$(cat /proc/loadavg | awk '{print $1,$2,$3}')" && echo "pve:$(pveversion 2>/dev/null || echo '-')"
+"#;
+    let out = ssh_run(&server.user, &server.host, cmd)?;
+    let mut info = HostInfo {
+        hostname: String::new(), kernel: String::new(), cpu_model: String::new(),
+        cpu_cores: String::new(), mem_used: String::new(), mem_total: String::new(),
+        uptime: String::new(), load: String::new(), pve_version: String::new(),
+    };
+    for line in out.lines() {
+        if let Some((k, v)) = line.split_once(':') {
+            let v = v.trim().to_string();
+            match k.trim() {
+                "hostname" => info.hostname = v,
+                "kernel" => info.kernel = v,
+                "cpu" => info.cpu_model = v,
+                "cores" => info.cpu_cores = v,
+                "mem" => {
+                    let parts: Vec<&str> = v.split('/').collect();
+                    info.mem_used = parts.first().unwrap_or(&"?").to_string();
+                    info.mem_total = parts.get(1).unwrap_or(&"?").to_string();
+                }
+                "uptime" => info.uptime = v,
+                "load" => info.load = v,
+                "pve" => info.pve_version = v,
+                _ => {}
+            }
+        }
+    }
+    Some(info)
+}
+
+pub fn display_host_info(info: &HostInfo) -> Vec<Line<'static>> {
+    let header = Style::default().fg(Color::Rgb(97, 175, 239)).add_modifier(ratatui::style::Modifier::BOLD);
+    let dim = Style::default().fg(Color::Rgb(92, 99, 112));
+    let val = Style::default().fg(Color::Rgb(171, 178, 191));
+
+    vec![
+        Line::from(Span::styled("  🖥️ Host", header)),
+        Line::from(vec![
+            Span::styled("     ", Style::default()),
+            Span::styled(format!("{} ", info.hostname), Style::default().fg(Color::Rgb(152, 195, 121))),
+            Span::styled(format!("| {} | {} cores ", info.cpu_model, info.cpu_cores), val),
+        ]),
+        Line::from(vec![
+            Span::styled("     RAM: ", dim),
+            Span::styled(format!("{}/{}", info.mem_used, info.mem_total), val),
+            Span::styled("  |  Load: ", dim),
+            Span::styled(info.load.clone(), val),
+            Span::styled("  |  Kernel: ", dim),
+            Span::styled(info.kernel.clone(), val),
+        ]),
+        Line::from(vec![
+            Span::styled("     Uptime: ", dim),
+            Span::styled(info.uptime.clone(), val),
+            Span::styled("  |  PVE: ", dim),
+            Span::styled(info.pve_version.clone(), val),
+        ]),
+        Line::from(""),
+    ]
+}
+
 // ── LXC/VM Management ──
 
 /// Get next available VMID on a server.
