@@ -288,13 +288,6 @@ pub fn default_config() -> Config {
         },
     );
     colors.insert(
-        "veilkey".into(),
-        ColorEntry {
-            fg: "#282c34".into(),
-            bg: "#98c379".into(),
-        },
-    );
-    colors.insert(
         "lazygit".into(),
         ColorEntry {
             fg: "#282c34".into(),
@@ -310,27 +303,6 @@ pub fn default_config() -> Config {
     );
 
     let apps = vec![
-        AppEntry {
-            emoji: "🔐".into(),
-            command: "spf".into(),
-            fg: "#282c34".into(),
-            bg: "#c678dd".into(),
-            mode: "window".into(),
-        },
-        AppEntry {
-            emoji: "🤖".into(),
-            command: "claude".into(),
-            fg: "#282c34".into(),
-            bg: "#61afef".into(),
-            mode: "window".into(),
-        },
-        AppEntry {
-            emoji: "🧠".into(),
-            command: "codex".into(),
-            fg: "#282c34".into(),
-            bg: "#98c379".into(),
-            mode: "window".into(),
-        },
         AppEntry {
             emoji: "📊".into(),
             command: "htop".into(),
@@ -350,27 +322,6 @@ pub fn default_config() -> Config {
             command: "lazydocker".into(),
             fg: "#282c34".into(),
             bg: "#61afef".into(),
-            mode: "window".into(),
-        },
-        AppEntry {
-            emoji: "🔑".into(),
-            command: "veilkey".into(),
-            fg: "#282c34".into(),
-            bg: "#98c379".into(),
-            mode: "window".into(),
-        },
-        AppEntry {
-            emoji: "🏛️".into(),
-            command: "vaultcenter-tui".into(),
-            fg: "#282c34".into(),
-            bg: "#56b6c2".into(),
-            mode: "window".into(),
-        },
-        AppEntry {
-            emoji: "🏭".into(),
-            command: "dalcenter".into(),
-            fg: "#282c34".into(),
-            bg: "#0f766e".into(),
             mode: "window".into(),
         },
         AppEntry {
@@ -416,16 +367,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_apps_contains_vaultcenter_tui() {
+    fn default_apps_contains_htop() {
         let config = default_config();
-        let vaultcenter_app = config
-            .apps
-            .iter()
-            .find(|app| app.command.contains("vaultcenter"))
-            .expect("default apps should contain a vaultcenter entry");
-        assert_eq!(
-            vaultcenter_app.command, "vaultcenter-tui",
-            "vaultcenter app command should be 'vaultcenter-tui', not 'vaultcenter'"
+        assert!(
+            config.apps.iter().any(|app| app.command == "htop"),
+            "default apps should contain htop"
         );
+    }
+
+    #[test]
+    fn default_config_has_no_ssh() {
+        let config = default_config();
+        assert!(config.ssh.is_empty(), "default config should have no SSH entries");
+    }
+
+    #[test]
+    fn default_app_mode_is_window() {
+        let config = default_config();
+        assert_eq!(config.window.default_app_mode, "window");
     }
 }
