@@ -368,6 +368,34 @@ impl App {
         self.pve_refresh();
     }
 
+    fn pve_delete_execute(&mut self) {
+        let idx = match &self.mode { Mode::Confirming { idx, .. } => *idx, _ => return };
+        if idx >= self.pve_containers.len() { self.mode = Mode::Normal; return; }
+        let si = self.pve_sel_server.unwrap_or(0);
+        let ct = self.pve_containers[idx].clone();
+        self.status_msg = Some(format!("Deleting {} {}...", ct.kind, ct.name));
+        if proxmox::delete_ct(&self.pve_servers[si], &ct) {
+            self.status_msg = Some(format!("{} deleted", ct.name));
+        } else {
+            self.status_msg = Some(format!("Failed to delete {}", ct.name));
+        }
+        self.mode = Mode::Normal;
+        self.pve_refresh();
+    }
+
+    fn pve_delete_confirm(&mut self) {
+        if self.pve_depth != 1 { return; }
+        let idx = match self.pve_list.selected() { Some(i) => i, None => return };
+        if idx >= self.pve_containers.len() { return; }
+        let ct = &self.pve_containers[idx];
+        if ct.status == "running" {
+            self.status_msg = Some(format!("{} is running — stop first", ct.name));
+            return;
+        }
+        let label = format!("DELETE {} {} (irreversible!)", ct.kind, ct.name);
+        self.mode = Mode::Confirming { label, idx };
+    }
+
     fn pve_stop_confirm(&mut self) {
         if self.pve_depth != 1 { return; }
         let idx = match self.pve_list.selected() { Some(i) => i, None => return };
@@ -695,6 +723,7 @@ impl App {
             KeyCode::Char('x') if self.tab == Tab::Proxmox => self.pve_stop_confirm(),
             KeyCode::Char('r') if self.tab == Tab::Proxmox => self.pve_refresh(),
             KeyCode::Char('k') if self.tab == Tab::Proxmox && self.pve_depth == 0 => self.pve_install_key(),
+            KeyCode::Char('D') if self.tab == Tab::Proxmox && self.pve_depth == 1 => self.pve_delete_confirm(),
             _ => {}
         }
         false
@@ -706,9 +735,16 @@ impl App {
             _ => return false,
         };
 
+        let label = match &self.mode {
+            Mode::Confirming { label, .. } => label.clone(),
+            _ => String::new(),
+        };
+
         match code {
             KeyCode::Char('y') | KeyCode::Enter => {
-                if self.tab == Tab::Proxmox {
+                if self.tab == Tab::Proxmox && label.starts_with("DELETE") {
+                    self.pve_delete_execute();
+                } else if self.tab == Tab::Proxmox {
                     self.pve_stop_execute();
                 } else if self.tab == Tab::Apps {
                     // Could be seed manager install confirm
@@ -1024,6 +1060,7 @@ fn render_hint(f: &mut ratatui::Frame, app: &App, area: Rect) {
                             Span::styled("[c]", Style::default().fg(GREEN)), Span::raw("onsole  "),
                             Span::styled("[s]", Style::default().fg(GREEN)), Span::raw("tart  "),
                             Span::styled("[x]", Style::default().fg(RED)), Span::raw(" stop  "),
+                            Span::styled("[D]", Style::default().fg(RED)), Span::raw("elete  "),
                         ]);
                     }
                     if app.pve_depth > 0 {
@@ -1131,6 +1168,12 @@ fn cli_dispatch(args: &[String]) -> Result<()> {
             println!("  pve-start <server> <vmid>  Start container");
             println!("  pve-stop <server> <vmid>   Stop container");
             println!("  pve-key <server>       Install SSH key on API server");
+            println!("  pve-create <server> <name> <template> [mem] [cores] [disk]");
+            println!("                         Create LXC (default: 512MB, 1 core, 8GB)");
+            println!("  pve-clone <server> <vmid> <name>");
+            println!("                         Clone container/VM");
+            println!("  pve-delete <server> <vmid>  Delete container/VM (must be stopped)");
+            println!("  pve-templates <server> List available templates");
             println!();
             println!("  connect-all            Open tmux sessions for all SSH hosts");
             println!("  exec-all <command>     Run command on all SSH hosts");
@@ -1393,6 +1436,98 @@ fn cli_dispatch(args: &[String]) -> Result<()> {
                     }
                     Err(e) => println!("✗ {e}"),
                 }
+            }
+            Ok(())
+        }
+
+        "pve-templates" => {
+            if args.len() < 2 { anyhow::bail!("Usage: pve-templates <server>"); }
+            let config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            let server = servers.iter().find(|s| s.name == args[1])
+                .ok_or_else(|| anyhow::anyhow!("Server '{}' not found", args[1]))?;
+            println!("Local templates:");
+            for t in proxmox::list_local_templates(server) {
+                println!("  {t}");
+            }
+            println!("\nAvailable to download:");
+            for t in proxmox::list_templates(server) {
+                println!("  {t}");
+            }
+            Ok(())
+        }
+
+        "pve-create" => {
+            if args.len() < 4 { anyhow::bail!("Usage: pve-create <server> <name> <template> [mem] [cores] [disk]"); }
+            let config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            let server = servers.iter().find(|s| s.name == args[1])
+                .ok_or_else(|| anyhow::anyhow!("Server '{}' not found", args[1]))?;
+            let hostname = &args[2];
+            let template = &args[3];
+            let memory: u32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(512);
+            let cores: u32 = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(1);
+            let disk: u32 = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(8);
+
+            let vmid = proxmox::next_vmid(server)
+                .ok_or_else(|| anyhow::anyhow!("Failed to get next VMID"))?;
+            println!("Creating LXC {vmid} ({hostname}) on {}...", server.name);
+            println!("  Template: {template}");
+            println!("  Memory: {memory}MB, Cores: {cores}, Disk: {disk}GB");
+
+            if proxmox::create_lxc(server, vmid, hostname, template, memory, cores, disk, "changeme") {
+                println!("✓ Created {vmid} ({hostname}) — default password: changeme");
+            } else {
+                println!("✗ Failed to create container");
+            }
+            Ok(())
+        }
+
+        "pve-clone" => {
+            if args.len() < 4 { anyhow::bail!("Usage: pve-clone <server> <vmid> <name>"); }
+            let config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            let server = servers.iter().find(|s| s.name == args[1])
+                .ok_or_else(|| anyhow::anyhow!("Server '{}' not found", args[1]))?;
+            let src_vmid: u32 = args[2].parse()?;
+            let hostname = &args[3];
+
+            let cts = proxmox::fetch_containers(server);
+            let ct = cts.iter().find(|c| c.vmid == src_vmid)
+                .ok_or_else(|| anyhow::anyhow!("Container {src_vmid} not found"))?;
+
+            let new_vmid = proxmox::next_vmid(server)
+                .ok_or_else(|| anyhow::anyhow!("Failed to get next VMID"))?;
+
+            println!("Cloning {} ({}) → {new_vmid} ({hostname})...", ct.vmid, ct.name);
+            if proxmox::clone_ct(server, src_vmid, new_vmid, hostname, &ct.kind) {
+                println!("✓ Cloned to {new_vmid} ({hostname})");
+            } else {
+                println!("✗ Clone failed");
+            }
+            Ok(())
+        }
+
+        "pve-delete" => {
+            if args.len() < 3 { anyhow::bail!("Usage: pve-delete <server> <vmid>"); }
+            let config = load_config()?;
+            let servers = proxmox::get_servers(&config);
+            let server = servers.iter().find(|s| s.name == args[1])
+                .ok_or_else(|| anyhow::anyhow!("Server '{}' not found", args[1]))?;
+            let vmid: u32 = args[2].parse()?;
+            let cts = proxmox::fetch_containers(server);
+            let ct = cts.iter().find(|c| c.vmid == vmid)
+                .ok_or_else(|| anyhow::anyhow!("Container {vmid} not found"))?;
+
+            if ct.status == "running" {
+                anyhow::bail!("{} ({}) is running — stop it first with: tmux-config pve-stop {} {}", ct.name, vmid, args[1], vmid);
+            }
+
+            println!("Deleting {} {} ({})...", ct.kind, vmid, ct.name);
+            if proxmox::delete_ct(server, ct) {
+                println!("✓ Deleted {vmid} ({name})", name = ct.name);
+            } else {
+                println!("✗ Delete failed");
             }
             Ok(())
         }

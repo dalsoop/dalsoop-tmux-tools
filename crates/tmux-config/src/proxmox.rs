@@ -353,6 +353,85 @@ pub fn console_cmd(server: &ProxmoxServer, c: &Container) -> Option<String> {
     Some(format!("ssh -t {}@{} {enter}", server.user, server.host))
 }
 
+// ── LXC/VM Management ──
+
+/// Get next available VMID on a server.
+pub fn next_vmid(server: &ProxmoxServer) -> Option<u32> {
+    match server.access {
+        AccessType::Ssh => {
+            let out = ssh_run(&server.user, &server.host, "pvesh get /cluster/nextid 2>/dev/null")?;
+            out.trim().trim_matches('"').parse().ok()
+        }
+        AccessType::Api => {
+            let ticket = api_get_ticket(server)?;
+            let text = api_get(server, &ticket, "/cluster/nextid")?;
+            let start = text.find("\"data\":")?;
+            let rest = &text[start + 7..];
+            // Could be number or "number"
+            let val = rest.trim().trim_matches(|c| c == '"' || c == '}' || c == ' ');
+            val.parse().ok()
+        }
+    }
+}
+
+/// List available LXC templates on a server.
+pub fn list_templates(server: &ProxmoxServer) -> Vec<String> {
+    let cmd = "pveam available --section system 2>/dev/null | awk '{print $2}' | head -20";
+    ssh_run(&server.user, &server.host, cmd)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// List downloaded templates on a server's local storage.
+pub fn list_local_templates(server: &ProxmoxServer) -> Vec<String> {
+    let cmd = "pveam list local 2>/dev/null | tail -n+2 | awk '{print $1}'";
+    ssh_run(&server.user, &server.host, cmd)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// Create an LXC container.
+pub fn create_lxc(server: &ProxmoxServer, vmid: u32, hostname: &str, template: &str,
+                  memory: u32, cores: u32, disk: u32, password: &str) -> bool {
+    let cmd = format!(
+        "pct create {vmid} {template} \
+         --hostname {hostname} \
+         --memory {memory} --cores {cores} \
+         --rootfs local-lvm:{disk} \
+         --net0 name=eth0,bridge=vmbr0,ip=dhcp \
+         --password {password} \
+         --start 1 \
+         --unprivileged 1 2>&1"
+    );
+    ssh_run(&server.user, &server.host, &cmd).is_some()
+}
+
+/// Clone an existing container/VM.
+pub fn clone_ct(server: &ProxmoxServer, src_vmid: u32, new_vmid: u32, hostname: &str, kind: &str) -> bool {
+    let cmd = if kind == "vm" {
+        format!("qm clone {src_vmid} {new_vmid} --name {hostname} --full 2>&1")
+    } else {
+        format!("pct clone {src_vmid} {new_vmid} --hostname {hostname} --full 2>&1")
+    };
+    ssh_run(&server.user, &server.host, &cmd).is_some()
+}
+
+/// Delete a container/VM (must be stopped).
+pub fn delete_ct(server: &ProxmoxServer, c: &Container) -> bool {
+    let cmd = if c.kind == "vm" {
+        format!("qm destroy {} --purge 2>&1", c.vmid)
+    } else {
+        format!("pct destroy {} --purge 2>&1", c.vmid)
+    };
+    ssh_run(&server.user, &server.host, &cmd).is_some()
+}
+
 // ── Display ──
 
 pub fn display_server(s: &ProxmoxServer) -> Line<'static> {
