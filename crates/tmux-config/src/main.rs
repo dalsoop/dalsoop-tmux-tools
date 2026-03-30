@@ -3,6 +3,7 @@ mod config_io;
 mod form;
 mod list_view;
 mod proxmox;
+mod seed;
 mod settings;
 mod ssh;
 mod tabs;
@@ -45,6 +46,7 @@ enum Mode {
     Normal,
     Editing,
     Confirming { label: String, idx: usize },
+    SeedBrowse { list: ListView },
 }
 
 // ─── app ─────────────────────────────────────────────────────────────────────
@@ -522,6 +524,61 @@ impl App {
 
     // Old container methods removed — now use pve_* methods above
 
+    fn open_seed_browser(&mut self) {
+        let mut lv = ListView::new();
+        lv.set_len(seed::SEEDS.len());
+        self.mode = Mode::SeedBrowse { list: lv };
+        self.status_msg = None;
+    }
+
+    fn seed_install(&mut self) {
+        let idx = match &self.mode {
+            Mode::SeedBrowse { list } => match list.selected() { Some(i) => i, None => return },
+            _ => return,
+        };
+        if idx >= seed::SEEDS.len() { return; }
+        let s = &seed::SEEDS[idx];
+
+        if seed::is_installed(s.command) {
+            // Already installed — just add to config if not present
+            if !self.config.apps.iter().any(|a| a.command == s.command) {
+                self.config.apps.push(tmux_windowbar::config::template::AppEntry {
+                    emoji: s.emoji.into(),
+                    command: s.command.into(),
+                    fg: s.fg.into(),
+                    bg: s.bg.into(),
+                    mode: self.config.window.default_app_mode.clone(),
+                });
+                let _ = save_and_apply(&self.config);
+                self.sync_lengths();
+                self.status_msg = Some(format!("{} added to apps", s.command));
+            } else {
+                self.status_msg = Some(format!("{} already in apps", s.command));
+            }
+            return;
+        }
+
+        // Not installed — install it
+        self.status_msg = Some(format!("Installing {}...", s.command));
+        if seed::install(s) {
+            // Add to config
+            if !self.config.apps.iter().any(|a| a.command == s.command) {
+                self.config.apps.push(tmux_windowbar::config::template::AppEntry {
+                    emoji: s.emoji.into(),
+                    command: s.command.into(),
+                    fg: s.fg.into(),
+                    bg: s.bg.into(),
+                    mode: self.config.window.default_app_mode.clone(),
+                });
+                let _ = save_and_apply(&self.config);
+                self.sync_lengths();
+            }
+            self.status_msg = Some(format!("{} installed & added", s.command));
+        } else {
+            self.status_msg = Some(format!("Failed to install {}", s.command));
+        }
+    }
+
     fn cancel(&mut self) {
         self.form = None;
         self.mode = Mode::Normal;
@@ -598,6 +655,7 @@ impl App {
             KeyCode::Char('e') if self.tab != Tab::Proxmox => self.start_edit(),
             KeyCode::Enter if self.tab != Tab::Proxmox => self.start_edit(),
             KeyCode::Char('d') if self.tab != Tab::Proxmox => self.start_delete(),
+            KeyCode::Char('i') if self.tab == Tab::Apps => self.open_seed_browser(),
             KeyCode::Char('c') if self.tab == Tab::Ssh => return self.connect_ssh(),
             // Proxmox: hierarchical navigation
             KeyCode::Enter | KeyCode::Right if self.tab == Tab::Proxmox => self.pve_enter(),
@@ -673,10 +731,8 @@ fn render_body(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
             render_confirm_overlay(f, &label, area, app.tab == Tab::Proxmox);
         }
         Mode::Editing => {
-            // Split body: list (upper) | form (lower, ~10 lines)
             let form_height = {
                 let fields = app.form.as_ref().map_or(0, |f| f.fields.len());
-                // label + each field + divider + hint
                 (fields as u16 + 4).min(area.height.saturating_sub(3))
             };
             let list_height = area.height.saturating_sub(form_height);
@@ -686,6 +742,42 @@ fn render_body(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
                 .split(area);
             render_list(f, app, parts[0]);
             render_form(f, app, parts[1]);
+        }
+        Mode::SeedBrowse { list } => {
+            let items: Vec<ListItem> = seed::SEEDS.iter()
+                .map(|s| {
+                    let installed = seed::is_installed(s.command);
+                    let in_config = app.config.apps.iter().any(|a| a.command == s.command);
+                    let status = if in_config { "✓ added" } else if installed { "✓ ready" } else { "✗" };
+                    let style = if in_config {
+                        Style::default().fg(SUBTLE)
+                    } else if installed {
+                        Style::default().fg(GREEN)
+                    } else {
+                        Style::default().fg(FG)
+                    };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!("  {} {:<14} ", s.emoji, s.command), style),
+                        Span::styled(format!("{:<8} ", status), if installed { Style::default().fg(GREEN) } else { Style::default().fg(RED) }),
+                        Span::styled(s.description, Style::default().fg(SUBTLE)),
+                    ]))
+                })
+                .collect();
+
+            let mut state = list.state.clone();
+            let widget = List::new(items)
+                .block(
+                    Block::default()
+                        .title(Span::styled(" Install Apps ", Style::default().fg(GREEN)))
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(BLUE))
+                        .style(Style::default().bg(BG)),
+                )
+                .style(Style::default().fg(FG).bg(BG))
+                .highlight_style(Style::default().fg(BLUE).bg(Color::Rgb(58, 63, 76)).add_modifier(Modifier::BOLD))
+                .highlight_symbol("> ");
+            f.render_stateful_widget(widget, area, &mut state);
         }
     }
 }
@@ -904,6 +996,10 @@ fn render_hint(f: &mut ratatui::Frame, app: &App, area: Rect) {
                         spans.push(Span::styled("[c]", Style::default().fg(GREEN)));
                         spans.push(Span::raw("onnect  "));
                     }
+                    if app.tab == Tab::Apps {
+                        spans.push(Span::styled("[i]", Style::default().fg(GREEN)));
+                        spans.push(Span::raw("nstall  "));
+                    }
                     spans.push(Span::styled("[Tab]", Style::default().fg(SUBTLE)));
                     spans.push(Span::raw(" switch tab  "));
                     spans.push(Span::styled("[q]", Style::default().fg(SUBTLE)));
@@ -911,6 +1007,10 @@ fn render_hint(f: &mut ratatui::Frame, app: &App, area: Rect) {
                     Line::from(spans)
                 }
             }
+            Mode::SeedBrowse { .. } => Line::from(vec![
+                Span::styled("[Enter]", Style::default().fg(GREEN)), Span::raw(" install & add  "),
+                Span::styled("[Esc]", Style::default().fg(RED)), Span::raw(" back"),
+            ]),
             Mode::Editing => Line::from(vec![
                 Span::styled("[Tab]", Style::default().fg(BLUE)), Span::raw(" next field  "),
                 Span::styled("[Enter]", Style::default().fg(GREEN)), Span::raw(" save  "),
@@ -1201,13 +1301,24 @@ fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) 
 
         match event::read()? {
             Event::Key(key) => {
-                let should_quit = match app.mode {
-                    Mode::Normal => app.handle_normal_key(key.code),
-                    Mode::Editing => {
-                        app.handle_form_key(key.code, key.modifiers);
-                        false
+                let should_quit = if let Mode::SeedBrowse { ref mut list } = app.mode {
+                    match key.code {
+                        KeyCode::Down | KeyCode::Char('j') => { list.move_down(); false }
+                        KeyCode::Up | KeyCode::Char('k') => { list.move_up(); false }
+                        KeyCode::Enter => { app.seed_install(); false }
+                        KeyCode::Esc | KeyCode::Char('q') => { app.mode = Mode::Normal; false }
+                        _ => false,
                     }
-                    Mode::Confirming { .. } => app.handle_confirm_key(key.code),
+                } else {
+                    match app.mode {
+                        Mode::Normal => app.handle_normal_key(key.code),
+                        Mode::Editing => {
+                            app.handle_form_key(key.code, key.modifiers);
+                            false
+                        }
+                        Mode::Confirming { .. } => app.handle_confirm_key(key.code),
+                        Mode::SeedBrowse { .. } => unreachable!(),
+                    }
                 };
                 if should_quit {
                     break;
