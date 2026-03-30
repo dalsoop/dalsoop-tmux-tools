@@ -89,15 +89,6 @@ fn render_left() -> Result<()> {
         }
     }
 
-    let clear_btn = if config.keybindings.pane_clear {
-        format!(
-            " {}",
-            click("_clear_", &sl.active_fg, &th.clear_bg, false, " \u{1f9f9} ")
-        )
-    } else {
-        String::new()
-    };
-
     let right_content = format!("{sys_stats}{}", right_parts.join(""));
 
     let window_section = std::process::Command::new("tmux-windowbar")
@@ -108,7 +99,7 @@ fn render_left() -> Result<()> {
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string());
 
     let session_label = label("Sessions", &th.label_fg);
-    let right_section = format!("{right_content}{clear_btn}");
+    let right_section = right_content;
     let format = if let Some(windows) = window_section {
         Line::new()
             .left()

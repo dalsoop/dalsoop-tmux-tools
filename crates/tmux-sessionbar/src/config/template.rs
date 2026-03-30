@@ -67,8 +67,6 @@ pub struct Config {
 pub struct ThemeConfig {
     #[serde(default = "default_label_fg")]
     pub label_fg: String,
-    #[serde(default = "default_clear_bg")]
-    pub clear_bg: String,
     #[serde(default = "default_stats_fg")]
     pub stats_fg: String,
     #[serde(default = "default_stats_bg")]
@@ -87,7 +85,6 @@ impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
             label_fg: default_label_fg(),
-            clear_bg: default_clear_bg(),
             stats_fg: default_stats_fg(),
             stats_bg: default_stats_bg(),
             mem_fg: default_mem_fg(),
@@ -251,9 +248,6 @@ fn default_clear_interval() -> u32 {
 }
 fn default_label_fg() -> String {
     "#98c379".into()
-}
-fn default_clear_bg() -> String {
-    "#e5c07b".into()
 }
 fn default_stats_fg() -> String {
     "#abb2bf".into()
