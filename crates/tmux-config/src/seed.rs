@@ -36,17 +36,6 @@ pub enum PkgManager {
     Go,
 }
 
-/// Install Homebrew if on macOS and not installed.
-pub fn ensure_brew() -> bool {
-    if is_installed("brew") { return true; }
-    if std::env::consts::OS != "macos" { return false; }
-    Command::new("sh")
-        .args(["-c", "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
 /// Return all available package managers on this system.
 pub fn available_managers() -> Vec<PkgManager> {
     let mut mgrs = Vec::new();
@@ -90,14 +79,48 @@ pub fn is_installed(command: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Install a seed app. Returns true on success.
-/// On macOS, installs Homebrew first if needed.
-pub fn install(seed: &SeedApp) -> bool {
-    // If brew is the only option and not installed, try installing it first
-    if !seed.brew.is_empty() && !is_installed("brew") && std::env::consts::OS == "macos" {
-        ensure_brew();
-    }
+/// Check what's needed to install a seed app.
+pub enum InstallStep {
+    /// Ready to install directly.
+    Ready(String),
+    /// Need to install a package manager first.
+    NeedManager(&'static str),
+    /// No way to install.
+    Unavailable,
+    /// Already installed, just add to config.
+    AlreadyInstalled,
+}
 
+pub fn check_install(seed: &SeedApp) -> InstallStep {
+    if is_installed(seed.command) {
+        return InstallStep::AlreadyInstalled;
+    }
+    if let Some(cmd) = install_cmd(seed) {
+        return InstallStep::Ready(cmd);
+    }
+    // Check if brew would work but isn't installed
+    if !seed.brew.is_empty() && std::env::consts::OS == "macos" {
+        return InstallStep::NeedManager("brew");
+    }
+    InstallStep::Unavailable
+}
+
+/// Install a package manager. Returns true on success.
+pub fn install_manager(name: &str) -> bool {
+    match name {
+        "brew" => {
+            Command::new("sh")
+                .args(["-c", "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+
+/// Install a seed app (assumes package manager is available).
+pub fn install(seed: &SeedApp) -> bool {
     let cmd = match install_cmd(seed) {
         Some(c) => c,
         None => return false,

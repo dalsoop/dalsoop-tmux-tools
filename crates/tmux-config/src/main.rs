@@ -539,43 +539,73 @@ impl App {
         if idx >= seed::SEEDS.len() { return; }
         let s = &seed::SEEDS[idx];
 
-        if seed::is_installed(s.command) {
-            // Already installed — just add to config if not present
-            if !self.config.apps.iter().any(|a| a.command == s.command) {
-                self.config.apps.push(tmux_windowbar::config::template::AppEntry {
-                    emoji: s.emoji.into(),
-                    command: s.command.into(),
-                    fg: s.fg.into(),
-                    bg: s.bg.into(),
-                    mode: self.config.window.default_app_mode.clone(),
-                });
-                let _ = save_and_apply(&self.config);
-                self.sync_lengths();
-                self.status_msg = Some(format!("{} added to apps", s.command));
-            } else {
-                self.status_msg = Some(format!("{} already in apps", s.command));
+        match seed::check_install(s) {
+            seed::InstallStep::AlreadyInstalled => {
+                if !self.config.apps.iter().any(|a| a.command == s.command) {
+                    self.add_seed_to_config(s);
+                    self.status_msg = Some(format!("{} added to apps", s.command));
+                } else {
+                    self.status_msg = Some(format!("{} already in apps", s.command));
+                }
             }
+            seed::InstallStep::Ready(cmd) => {
+                self.status_msg = Some(format!("Installing {} ({})...", s.command, cmd));
+                if seed::install(s) {
+                    self.add_seed_to_config(s);
+                    self.status_msg = Some(format!("{} installed & added", s.command));
+                } else {
+                    self.status_msg = Some(format!("Failed to install {}", s.command));
+                }
+            }
+            seed::InstallStep::NeedManager(mgr) => {
+                // Ask to install the manager first via confirm
+                let label = format!("install {mgr} first, then {}", s.command);
+                self.mode = Mode::Confirming { label, idx };
+            }
+            seed::InstallStep::Unavailable => {
+                self.status_msg = Some(format!("No package manager available for {}", s.command));
+            }
+        }
+    }
+
+    fn seed_install_with_manager(&mut self, idx: usize) {
+        if idx >= seed::SEEDS.len() { return; }
+        let s = &seed::SEEDS[idx];
+
+        // Step 1: install package manager
+        let mgr = match seed::check_install(s) {
+            seed::InstallStep::NeedManager(m) => m,
+            _ => { self.mode = Mode::Normal; return; }
+        };
+        self.status_msg = Some(format!("Installing {mgr}..."));
+        if !seed::install_manager(mgr) {
+            self.status_msg = Some(format!("Failed to install {mgr}"));
+            self.mode = Mode::Normal;
             return;
         }
 
-        // Not installed — install it
+        // Step 2: install the app
         self.status_msg = Some(format!("Installing {}...", s.command));
         if seed::install(s) {
-            // Add to config
-            if !self.config.apps.iter().any(|a| a.command == s.command) {
-                self.config.apps.push(tmux_windowbar::config::template::AppEntry {
-                    emoji: s.emoji.into(),
-                    command: s.command.into(),
-                    fg: s.fg.into(),
-                    bg: s.bg.into(),
-                    mode: self.config.window.default_app_mode.clone(),
-                });
-                let _ = save_and_apply(&self.config);
-                self.sync_lengths();
-            }
-            self.status_msg = Some(format!("{} installed & added", s.command));
+            self.add_seed_to_config(s);
+            self.status_msg = Some(format!("{mgr} + {} installed & added", s.command));
         } else {
-            self.status_msg = Some(format!("Failed to install {}", s.command));
+            self.status_msg = Some(format!("{mgr} installed, but {} failed", s.command));
+        }
+        self.mode = Mode::Normal;
+    }
+
+    fn add_seed_to_config(&mut self, s: &seed::SeedApp) {
+        if !self.config.apps.iter().any(|a| a.command == s.command) {
+            self.config.apps.push(tmux_windowbar::config::template::AppEntry {
+                emoji: s.emoji.into(),
+                command: s.command.into(),
+                fg: s.fg.into(),
+                bg: s.bg.into(),
+                mode: self.config.window.default_app_mode.clone(),
+            });
+            let _ = save_and_apply(&self.config);
+            self.sync_lengths();
         }
     }
 
@@ -671,19 +701,27 @@ impl App {
     }
 
     fn handle_confirm_key(&mut self, code: KeyCode) -> bool {
-        // When on proxmox tab, confirm is for stop, not delete
-        if self.tab == Tab::Proxmox {
-            match code {
-                KeyCode::Char('y') | KeyCode::Enter => self.pve_stop_execute(),
-                KeyCode::Char('n') | KeyCode::Esc   => { self.mode = Mode::Normal; }
-                KeyCode::Char('q') => return true,
-                _ => {}
-            }
-            return false;
-        }
+        let idx = match &self.mode {
+            Mode::Confirming { idx, .. } => *idx,
+            _ => return false,
+        };
+
         match code {
-            KeyCode::Char('y') | KeyCode::Enter => self.confirm_delete(),
-            KeyCode::Char('n') | KeyCode::Esc   => { self.mode = Mode::Normal; }
+            KeyCode::Char('y') | KeyCode::Enter => {
+                if self.tab == Tab::Proxmox {
+                    self.pve_stop_execute();
+                } else if self.tab == Tab::Apps {
+                    // Could be seed manager install confirm
+                    if idx < seed::SEEDS.len() && !seed::is_installed(seed::SEEDS[idx].command) {
+                        self.seed_install_with_manager(idx);
+                    } else {
+                        self.confirm_delete();
+                    }
+                } else {
+                    self.confirm_delete();
+                }
+            }
+            KeyCode::Char('n') | KeyCode::Esc => { self.mode = Mode::Normal; }
             KeyCode::Char('q') => return true,
             _ => {}
         }
