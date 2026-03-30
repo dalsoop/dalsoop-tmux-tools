@@ -10,6 +10,7 @@ pub fn add_form() -> Form {
             Field { label: "Host", value: String::new() },
             Field { label: "User", value: String::new() },
             Field { label: "Emoji", value: "\u{1f5a5}\u{fe0f}".into() },
+            Field { label: "Type (ssh/proxmox)", value: "ssh".into() },
         ],
         None,
     )
@@ -24,6 +25,7 @@ pub fn edit_form(config: &Config, idx: usize) -> Form {
             Field { label: "Host", value: e.host.clone() },
             Field { label: "User", value: e.user.clone().unwrap_or_default() },
             Field { label: "Emoji", value: e.emoji.clone() },
+            Field { label: "Type (ssh/proxmox)", value: e.r#type.clone() },
         ],
         Some(idx),
     )
@@ -36,7 +38,9 @@ pub fn apply_form(config: &mut Config, form: &Form) {
     let host = values[1].to_owned();
     let user_str = values[2].to_owned();
     let emoji = values[3].to_owned();
+    let type_str = values[4].to_owned();
     let user = if user_str.is_empty() { None } else { Some(user_str) };
+    let entry_type = if type_str == "proxmox" { "proxmox".into() } else { "ssh".into() };
 
     match form.edit_idx {
         None => {
@@ -47,6 +51,7 @@ pub fn apply_form(config: &mut Config, form: &Form) {
                 emoji,
                 fg: "#abb2bf".into(),
                 bg: "#3e4452".into(),
+                r#type: entry_type,
             });
         }
         Some(idx) => {
@@ -55,6 +60,7 @@ pub fn apply_form(config: &mut Config, form: &Form) {
             e.host = host;
             e.user = user;
             e.emoji = emoji;
+            e.r#type = entry_type;
         }
     }
 }
@@ -67,7 +73,8 @@ pub fn display(e: &SshEntry) -> String {
     } else {
         format!("{user}@{}", e.host)
     };
-    format!("{} {}  {}", e.emoji, e.name, target)
+    let type_tag = if e.r#type == "proxmox" { " [proxmox]" } else { "" };
+    format!("{} {}  {}{}", e.emoji, e.name, target, type_tag)
 }
 
 /// Delete entry at idx.
@@ -85,7 +92,7 @@ mod tests {
     #[test]
     fn add_form_has_four_fields() {
         let f = add_form();
-        assert_eq!(f.fields.len(), 4);
+        assert_eq!(f.fields.len(), 5);
         assert_eq!(f.edit_idx, None);
     }
 
@@ -99,6 +106,7 @@ mod tests {
             emoji: "\u{1f5a5}\u{fe0f}".into(),
             fg: "#abb2bf".into(),
             bg: "#3e4452".into(),
+            r#type: "ssh".into(),
         });
         let f = edit_form(&config, 0);
         assert_eq!(f.fields[0].value, "proxmox");
@@ -133,6 +141,7 @@ mod tests {
             emoji: "\u{1f5a5}\u{fe0f}".into(),
             fg: "#abb2bf".into(),
             bg: "#3e4452".into(),
+            r#type: "ssh".into(),
         });
         let mut form = edit_form(&config, 0);
         form.fields[0].value = "new".into();
@@ -150,6 +159,7 @@ mod tests {
             emoji: "\u{1f5a5}\u{fe0f}".into(),
             fg: "#abb2bf".into(),
             bg: "#3e4452".into(),
+            r#type: "ssh".into(),
         });
         assert_eq!(config.ssh.len(), 1);
         delete(&mut config, 0);
@@ -165,6 +175,7 @@ mod tests {
             emoji: "\u{1f5a5}\u{fe0f}".into(),
             fg: "#abb2bf".into(),
             bg: "#3e4452".into(),
+            r#type: "ssh".into(),
         };
         let s = display(&e);
         assert!(s.contains("proxmox"));

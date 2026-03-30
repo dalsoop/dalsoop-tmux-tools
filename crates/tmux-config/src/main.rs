@@ -1,8 +1,8 @@
 mod apps;
 mod config_io;
-mod containers;
 mod form;
 mod list_view;
+mod proxmox;
 mod settings;
 mod ssh;
 mod tabs;
@@ -25,9 +25,9 @@ use std::io;
 use tmux_windowbar::config::template::Config;
 
 use config_io::{load_config, save_and_apply};
-use containers::Container;
 use form::Form;
 use list_view::ListView;
+use proxmox::{ProxmoxServer, Container, DockerContainer};
 use settings::SettingItem;
 use tabs::Tab;
 
@@ -52,36 +52,45 @@ struct App {
     tab:            Tab,
     ssh:            ListView,
     apps:           ListView,
-    containers:     ListView,
     settings:       ListView,
     mode:           Mode,
     form:           Option<Form>,
     config:         Config,
-    /// Cached flat settings items (rebuilt when settings tab is entered).
     setting_items:  Vec<SettingItem>,
     status_msg:     Option<String>,
-    container_list: Vec<Container>,
-    proxmox_host:   String,
+    // Proxmox hierarchical state
+    pve_list:       ListView,
+    pve_depth:      usize, // 0=servers, 1=containers, 2=docker+ports
+    pve_servers:    Vec<ProxmoxServer>,
+    pve_sel_server: Option<usize>,
+    pve_containers: Vec<Container>,
+    pve_sel_ct:     Option<usize>,
+    pve_docker:     Vec<DockerContainer>,
+    pve_ports:      Vec<String>,
 }
 
 impl App {
     fn new(config: Config) -> Self {
         let setting_items = settings::build_items(&config);
-        let proxmox_host = containers::resolve_proxmox_host(&config.ssh);
-        let container_list = containers::fetch(&proxmox_host);
+        let pve_servers = proxmox::get_servers(&config);
         let mut app = Self {
             tab: Tab::Ssh,
             ssh: ListView::new(),
             apps: ListView::new(),
-            containers: ListView::new(),
             settings: ListView::new(),
             mode: Mode::Normal,
             form: None,
             config,
             setting_items,
             status_msg: None,
-            container_list,
-            proxmox_host,
+            pve_list: ListView::new(),
+            pve_depth: 0,
+            pve_servers,
+            pve_sel_server: None,
+            pve_containers: Vec::new(),
+            pve_sel_ct: None,
+            pve_docker: Vec::new(),
+            pve_ports: Vec::new(),
         };
         app.sync_lengths();
         app
@@ -91,7 +100,16 @@ impl App {
         self.ssh.set_len(self.config.ssh.len());
         self.apps.set_len(self.config.apps.len());
         self.settings.set_len(self.setting_items.len());
-        self.containers.set_len(self.container_list.len());
+        self.sync_pve_list();
+    }
+
+    fn sync_pve_list(&mut self) {
+        let len = match self.pve_depth {
+            0 => self.pve_servers.len(),
+            1 => self.pve_containers.len(),
+            _ => self.pve_docker.len() + self.pve_ports.len(),
+        };
+        self.pve_list.set_len(len);
     }
 
     fn reload_settings(&mut self) {
@@ -99,22 +117,186 @@ impl App {
         self.settings.set_len(self.setting_items.len());
     }
 
-    fn refresh_containers(&mut self) {
-        self.container_list = containers::fetch(&self.proxmox_host);
-        self.containers.set_len(self.container_list.len());
-        if self.container_list.is_empty() {
-            self.status_msg = Some("Failed to reach Proxmox".into());
-        } else {
-            self.status_msg = Some(format!("Loaded {} containers/VMs", self.container_list.len()));
+    fn current_list_mut(&mut self) -> &mut ListView {
+        match self.tab {
+            Tab::Ssh      => &mut self.ssh,
+            Tab::Apps     => &mut self.apps,
+            Tab::Proxmox  => &mut self.pve_list,
+            Tab::Settings => &mut self.settings,
         }
     }
 
-    fn current_list_mut(&mut self) -> &mut ListView {
-        match self.tab {
-            Tab::Ssh        => &mut self.ssh,
-            Tab::Apps       => &mut self.apps,
-            Tab::Containers => &mut self.containers,
-            Tab::Settings   => &mut self.settings,
+    // Proxmox drill-down
+    fn pve_enter(&mut self) {
+        match self.pve_depth {
+            0 => {
+                // Enter server → fetch containers
+                let idx = match self.pve_list.selected() { Some(i) => i, None => return };
+                if idx >= self.pve_servers.len() { return; }
+                self.pve_sel_server = Some(idx);
+                self.status_msg = Some("Loading containers...".into());
+                self.pve_containers = proxmox::fetch_containers(&self.pve_servers[idx]);
+                self.pve_depth = 1;
+                self.sync_pve_list();
+                if self.pve_containers.is_empty() {
+                    self.status_msg = Some("No containers found or unreachable".into());
+                } else {
+                    self.status_msg = Some(format!("{} containers", self.pve_containers.len()));
+                }
+            }
+            1 => {
+                // Enter container → fetch docker + ports
+                let idx = match self.pve_list.selected() { Some(i) => i, None => return };
+                if idx >= self.pve_containers.len() { return; }
+                let server_idx = self.pve_sel_server.unwrap_or(0);
+                let server = &self.pve_servers[server_idx];
+                let ct = &self.pve_containers[idx];
+                if ct.kind != "lxc" {
+                    self.status_msg = Some("Docker inspection only for LXC".into());
+                    return;
+                }
+                self.pve_sel_ct = Some(idx);
+                self.status_msg = Some("Loading docker & ports...".into());
+                self.pve_docker = proxmox::fetch_docker(server, ct.vmid);
+                self.pve_ports = proxmox::fetch_ports(server, ct.vmid);
+                self.pve_depth = 2;
+                self.sync_pve_list();
+                let msg = format!("{} docker, {} ports", self.pve_docker.len(), self.pve_ports.len());
+                self.status_msg = Some(msg);
+            }
+            _ => {}
+        }
+    }
+
+    fn pve_back(&mut self) {
+        match self.pve_depth {
+            2 => {
+                self.pve_depth = 1;
+                self.pve_docker.clear();
+                self.pve_ports.clear();
+                self.sync_pve_list();
+                self.status_msg = None;
+            }
+            1 => {
+                self.pve_depth = 0;
+                self.pve_containers.clear();
+                self.pve_sel_server = None;
+                self.sync_pve_list();
+                self.status_msg = None;
+            }
+            _ => {}
+        }
+    }
+
+    fn pve_refresh(&mut self) {
+        self.pve_servers = proxmox::get_servers(&self.config);
+        match self.pve_depth {
+            0 => {
+                self.sync_pve_list();
+                self.status_msg = Some(format!("{} servers", self.pve_servers.len()));
+            }
+            1 => {
+                let idx = self.pve_sel_server.unwrap_or(0);
+                if idx < self.pve_servers.len() {
+                    self.pve_containers = proxmox::fetch_containers(&self.pve_servers[idx]);
+                    self.sync_pve_list();
+                    self.status_msg = Some(format!("{} containers", self.pve_containers.len()));
+                }
+            }
+            2 => {
+                let si = self.pve_sel_server.unwrap_or(0);
+                let ci = self.pve_sel_ct.unwrap_or(0);
+                if si < self.pve_servers.len() && ci < self.pve_containers.len() {
+                    let server = &self.pve_servers[si];
+                    let vmid = self.pve_containers[ci].vmid;
+                    self.pve_docker = proxmox::fetch_docker(server, vmid);
+                    self.pve_ports = proxmox::fetch_ports(server, vmid);
+                    self.sync_pve_list();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn pve_console(&mut self) -> bool {
+        if self.pve_depth != 1 { return false; }
+        let idx = match self.pve_list.selected() { Some(i) => i, None => return false };
+        if idx >= self.pve_containers.len() { return false; }
+        let si = self.pve_sel_server.unwrap_or(0);
+        if si >= self.pve_servers.len() { return false; }
+        let server = &self.pve_servers[si];
+        let ct = &self.pve_containers[idx];
+        let session_name = format!("ct-{}", ct.vmid);
+        let cmd = proxmox::console_cmd(server, ct);
+
+        let has = std::process::Command::new("tmux")
+            .args(["has-session", "-t", &format!("={session_name}")])
+            .status().map(|s| s.success()).unwrap_or(false);
+        if !has {
+            let _ = std::process::Command::new("tmux")
+                .args(["new-session", "-d", "-s", &session_name, &cmd])
+                .status();
+        }
+        let _ = std::process::Command::new("tmux")
+            .args(["switch-client", "-t", &format!("={session_name}")])
+            .status();
+        true
+    }
+
+    fn pve_start(&mut self) {
+        if self.pve_depth != 1 { return; }
+        let idx = match self.pve_list.selected() { Some(i) => i, None => return };
+        if idx >= self.pve_containers.len() { return; }
+        let si = self.pve_sel_server.unwrap_or(0);
+        let ct = self.pve_containers[idx].clone();
+        if ct.status == "running" {
+            self.status_msg = Some(format!("{} already running", ct.name));
+            return;
+        }
+        self.status_msg = Some(format!("Starting {}...", ct.name));
+        proxmox::start_container(&self.pve_servers[si], &ct);
+        self.pve_refresh();
+    }
+
+    fn pve_stop_confirm(&mut self) {
+        if self.pve_depth != 1 { return; }
+        let idx = match self.pve_list.selected() { Some(i) => i, None => return };
+        if idx >= self.pve_containers.len() { return; }
+        let ct = &self.pve_containers[idx];
+        if ct.status != "running" {
+            self.status_msg = Some(format!("{} not running", ct.name));
+            return;
+        }
+        let label = format!("stop {}", ct.name);
+        self.mode = Mode::Confirming { label, idx };
+    }
+
+    fn pve_stop_execute(&mut self) {
+        let idx = match &self.mode { Mode::Confirming { idx, .. } => *idx, _ => return };
+        if idx >= self.pve_containers.len() { self.mode = Mode::Normal; return; }
+        let si = self.pve_sel_server.unwrap_or(0);
+        let ct = self.pve_containers[idx].clone();
+        self.status_msg = Some(format!("Stopping {}...", ct.name));
+        proxmox::stop_container(&self.pve_servers[si], &ct);
+        self.mode = Mode::Normal;
+        self.pve_refresh();
+    }
+
+    fn pve_breadcrumb(&self) -> String {
+        match self.pve_depth {
+            0 => "Proxmox Servers".into(),
+            1 => {
+                let si = self.pve_sel_server.unwrap_or(0);
+                let name = self.pve_servers.get(si).map(|s| s.name.as_str()).unwrap_or("?");
+                format!("{name} > Containers")
+            }
+            _ => {
+                let si = self.pve_sel_server.unwrap_or(0);
+                let ci = self.pve_sel_ct.unwrap_or(0);
+                let sname = self.pve_servers.get(si).map(|s| s.name.as_str()).unwrap_or("?");
+                let cname = self.pve_containers.get(ci).map(|c| c.name.as_str()).unwrap_or("?");
+                format!("{sname} > {cname} > Docker/Ports")
+            }
         }
     }
 
@@ -125,7 +307,7 @@ impl App {
         self.form = Some(match self.tab {
             Tab::Ssh      => ssh::add_form(),
             Tab::Apps     => apps::add_form(),
-            Tab::Settings | Tab::Containers => return, // no "add" for these
+            Tab::Settings | Tab::Proxmox => return, // no "add" for these
         });
         self.mode = Mode::Editing;
         self.status_msg = None;
@@ -145,7 +327,7 @@ impl App {
                 let idx = match self.settings.selected() { Some(i) => i, None => return };
                 settings::edit_form(&self.setting_items, idx)
             }
-            Tab::Containers => return, // no edit for containers
+            Tab::Proxmox => return, // no edit for containers
         };
         self.form = Some(form);
         self.mode = Mode::Editing;
@@ -164,7 +346,7 @@ impl App {
                 let label = self.config.apps[idx].command.clone();
                 self.mode = Mode::Confirming { label, idx };
             }
-            Tab::Settings | Tab::Containers => {} // no delete for these
+            Tab::Settings | Tab::Proxmox => {} // no delete for these
         }
         self.status_msg = None;
     }
@@ -177,7 +359,7 @@ impl App {
         match self.tab {
             Tab::Ssh  => ssh::delete(&mut self.config, idx),
             Tab::Apps => apps::delete(&mut self.config, idx),
-            Tab::Settings | Tab::Containers => {}
+            Tab::Settings | Tab::Proxmox => {}
         }
         let _ = save_and_apply(&self.config);
         self.sync_lengths();
@@ -230,94 +412,7 @@ impl App {
         true // exit TUI
     }
 
-    /// Open a console session for the selected container.
-    /// Creates tmux session `ct-{vmid}` and switches to it.
-    /// Returns true to exit TUI.
-    fn console_container(&mut self) -> bool {
-        let idx = match self.containers.selected() {
-            Some(i) => i,
-            None => return false,
-        };
-        if idx >= self.container_list.len() {
-            return false;
-        }
-        let c = &self.container_list[idx];
-        let session_name = format!("ct-{}", c.vmid);
-        let cmd = containers::console_cmd(&self.proxmox_host, c);
-
-        // Check if session exists
-        let has = std::process::Command::new("tmux")
-            .args(["has-session", "-t", &format!("={session_name}")])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-
-        if !has {
-            let _ = std::process::Command::new("tmux")
-                .args(["new-session", "-d", "-s", &session_name, &cmd])
-                .status();
-        }
-
-        let _ = std::process::Command::new("tmux")
-            .args(["switch-client", "-t", &format!("={session_name}")])
-            .status();
-
-        true
-    }
-
-    /// Start the selected container (if stopped).
-    fn start_container(&mut self) {
-        let idx = match self.containers.selected() {
-            Some(i) => i,
-            None => return,
-        };
-        if idx >= self.container_list.len() {
-            return;
-        }
-        let c = self.container_list[idx].clone();
-        if c.status == "running" {
-            self.status_msg = Some(format!("{} is already running", c.name));
-            return;
-        }
-        self.status_msg = Some(format!("Starting {} {}...", c.kind, c.vmid));
-        containers::start(&self.proxmox_host.clone(), &c);
-        self.refresh_containers();
-    }
-
-    /// Stop the selected container (with confirm prompt).
-    fn start_stop_container(&mut self) {
-        let idx = match self.containers.selected() {
-            Some(i) => i,
-            None => return,
-        };
-        if idx >= self.container_list.len() {
-            return;
-        }
-        let c = &self.container_list[idx];
-        if c.status != "running" {
-            self.status_msg = Some(format!("{} is not running", c.name));
-            return;
-        }
-        let label = format!("stop {} {}", c.kind, c.name);
-        self.mode = Mode::Confirming { label, idx };
-        self.status_msg = None;
-    }
-
-    fn confirm_stop_container(&mut self) {
-        let idx = match &self.mode {
-            Mode::Confirming { idx, .. } => *idx,
-            _ => return,
-        };
-        if idx >= self.container_list.len() {
-            self.mode = Mode::Normal;
-            return;
-        }
-        let c = self.container_list[idx].clone();
-        self.status_msg = Some(format!("Stopping {} {}...", c.kind, c.vmid));
-        containers::stop(&self.proxmox_host.clone(), &c);
-        self.mode = Mode::Normal;
-        self.refresh_containers();
-    }
+    // Old container methods removed — now use pve_* methods above
 
     fn cancel(&mut self) {
         self.form = None;
@@ -336,7 +431,7 @@ impl App {
                 settings::apply_form(&mut self.config, &form);
                 self.reload_settings();
             }
-            Tab::Containers => {}
+            Tab::Proxmox => {}
         }
         let _ = save_and_apply(&self.config);
         self.sync_lengths();
@@ -372,7 +467,9 @@ impl App {
 
     fn handle_normal_key(&mut self, code: KeyCode) -> bool {
         match code {
-            KeyCode::Char('q') | KeyCode::Esc => return true,
+            KeyCode::Char('q') => return true,
+            KeyCode::Esc if self.tab == Tab::Proxmox && self.pve_depth > 0 => self.pve_back(),
+            KeyCode::Esc => return true,
             KeyCode::Tab | KeyCode::Char('\t') => {
                 let next = (self.tab.index() + 1) % 4;
                 self.tab = Tab::from_index(next);
@@ -381,27 +478,31 @@ impl App {
             KeyCode::Char('1') => { self.tab = Tab::Ssh;        self.status_msg = None; }
             KeyCode::Char('2') => { self.tab = Tab::Apps;       self.status_msg = None; }
             KeyCode::Char('3') => { self.tab = Tab::Settings;   self.status_msg = None; }
-            KeyCode::Char('4') => { self.tab = Tab::Containers; self.status_msg = None; }
+            KeyCode::Char('4') => { self.tab = Tab::Proxmox; self.status_msg = None; }
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
             KeyCode::Up   | KeyCode::Char('k') => self.move_up(),
-            KeyCode::Char('a') => self.start_add(),
-            KeyCode::Char('e') | KeyCode::Enter => self.start_edit(),
-            KeyCode::Char('d') => self.start_delete(),
+            KeyCode::Char('a') if self.tab != Tab::Proxmox => self.start_add(),
+            KeyCode::Char('e') if self.tab != Tab::Proxmox => self.start_edit(),
+            KeyCode::Enter if self.tab != Tab::Proxmox => self.start_edit(),
+            KeyCode::Char('d') if self.tab != Tab::Proxmox => self.start_delete(),
             KeyCode::Char('c') if self.tab == Tab::Ssh => return self.connect_ssh(),
-            KeyCode::Char('c') if self.tab == Tab::Containers => return self.console_container(),
-            KeyCode::Char('s') if self.tab == Tab::Containers => self.start_container(),
-            KeyCode::Char('x') if self.tab == Tab::Containers => self.start_stop_container(),
-            KeyCode::Char('r') if self.tab == Tab::Containers => self.refresh_containers(),
+            // Proxmox: hierarchical navigation
+            KeyCode::Enter | KeyCode::Right if self.tab == Tab::Proxmox => self.pve_enter(),
+            KeyCode::Backspace | KeyCode::Left if self.tab == Tab::Proxmox => self.pve_back(),
+            KeyCode::Char('c') if self.tab == Tab::Proxmox => return self.pve_console(),
+            KeyCode::Char('s') if self.tab == Tab::Proxmox => self.pve_start(),
+            KeyCode::Char('x') if self.tab == Tab::Proxmox => self.pve_stop_confirm(),
+            KeyCode::Char('r') if self.tab == Tab::Proxmox => self.pve_refresh(),
             _ => {}
         }
         false
     }
 
     fn handle_confirm_key(&mut self, code: KeyCode) -> bool {
-        // When on containers tab, confirm is for stop, not delete
-        if self.tab == Tab::Containers {
+        // When on proxmox tab, confirm is for stop, not delete
+        if self.tab == Tab::Proxmox {
             match code {
-                KeyCode::Char('y') | KeyCode::Enter => self.confirm_stop_container(),
+                KeyCode::Char('y') | KeyCode::Enter => self.pve_stop_execute(),
                 KeyCode::Char('n') | KeyCode::Esc   => { self.mode = Mode::Normal; }
                 KeyCode::Char('q') => return true,
                 _ => {}
@@ -455,7 +556,7 @@ fn render_body(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
         Mode::Confirming { label, .. } => {
             let label = label.clone();
             render_list(f, app, area);
-            render_confirm_overlay(f, &label, area, app.tab == Tab::Containers);
+            render_confirm_overlay(f, &label, area, app.tab == Tab::Proxmox);
         }
         Mode::Editing => {
             // Split body: list (upper) | form (lower, ~10 lines)
@@ -477,7 +578,7 @@ fn render_body(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
 
 fn render_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
     match app.tab {
-        Tab::Containers => render_containers_list(f, app, area),
+        Tab::Proxmox => render_proxmox_list(f, app, area),
         _ => render_standard_list(f, app, area),
     }
 }
@@ -502,7 +603,7 @@ fn render_standard_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
                 .collect();
             ("Settings", items, &mut app.settings)
         }
-        Tab::Containers => unreachable!(),
+        Tab::Proxmox => unreachable!(),
     };
 
     let list = List::new(items)
@@ -526,29 +627,31 @@ fn render_standard_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
     f.render_stateful_widget(list, area, &mut list_view.state);
 }
 
-fn render_containers_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
-    let header = Line::from(vec![
-        Span::styled(
-            format!("   {:>5}  {:<20}  {:<10}  {}", "VMID", "NAME", "STATUS", "TYPE"),
-            Style::default().fg(SUBTLE).add_modifier(Modifier::BOLD),
-        ),
-    ]);
+fn render_proxmox_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
+    let breadcrumb = app.pve_breadcrumb();
 
-    let mut items: Vec<ListItem> = vec![ListItem::new(header)];
-    for c in &app.container_list {
-        items.push(ListItem::new(containers::display(c)));
-    }
-
-    let title = if app.container_list.is_empty() {
-        " Containers (no data) "
-    } else {
-        " Containers "
+    let items: Vec<ListItem> = match app.pve_depth {
+        0 => app.pve_servers.iter()
+            .map(|s| ListItem::new(proxmox::display_server(s)))
+            .collect(),
+        1 => app.pve_containers.iter()
+            .map(|c| ListItem::new(proxmox::display_container(c)))
+            .collect(),
+        _ => {
+            let mut items: Vec<ListItem> = app.pve_docker.iter()
+                .map(|d| ListItem::new(proxmox::display_docker(d)))
+                .collect();
+            for p in &app.pve_ports {
+                items.push(ListItem::new(proxmox::display_port(p)));
+            }
+            items
+        }
     };
 
     let list = List::new(items)
         .block(
             Block::default()
-                .title(Span::styled(title, Style::default().fg(GREEN)))
+                .title(Span::styled(format!(" {breadcrumb} "), Style::default().fg(GREEN)))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(BORDER))
@@ -563,7 +666,7 @@ fn render_containers_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
         )
         .highlight_symbol("> ");
 
-    f.render_stateful_widget(list, area, &mut app.containers.state);
+    f.render_stateful_widget(list, area, &mut app.pve_list.state);
 }
 
 fn render_form(f: &mut ratatui::Frame, app: &App, area: Rect) {
@@ -652,15 +755,27 @@ fn render_hint(f: &mut ratatui::Frame, app: &App, area: Rect) {
     } else {
         match app.mode {
             Mode::Normal => {
-                if app.tab == Tab::Containers {
-                    Line::from(vec![
-                        Span::styled("[c]", Style::default().fg(GREEN)),   Span::raw("onsole  "),
-                        Span::styled("[s]", Style::default().fg(GREEN)),   Span::raw("tart  "),
-                        Span::styled("[x]", Style::default().fg(RED)),     Span::raw(" stop  "),
-                        Span::styled("[r]", Style::default().fg(BLUE)),    Span::raw("efresh  "),
-                        Span::styled("[Tab]", Style::default().fg(SUBTLE)), Span::raw(" switch tab  "),
-                        Span::styled("[q]", Style::default().fg(SUBTLE)),  Span::raw("uit"),
-                    ])
+                if app.tab == Tab::Proxmox {
+                    let mut spans = Vec::new();
+                    if app.pve_depth == 0 {
+                        spans.extend([Span::styled("[Enter]", Style::default().fg(GREEN)), Span::raw(" open  ")]);
+                    } else if app.pve_depth == 1 {
+                        spans.extend([
+                            Span::styled("[Enter]", Style::default().fg(GREEN)), Span::raw(" docker  "),
+                            Span::styled("[c]", Style::default().fg(GREEN)), Span::raw("onsole  "),
+                            Span::styled("[s]", Style::default().fg(GREEN)), Span::raw("tart  "),
+                            Span::styled("[x]", Style::default().fg(RED)), Span::raw(" stop  "),
+                        ]);
+                    }
+                    if app.pve_depth > 0 {
+                        spans.extend([Span::styled("[←/Esc]", Style::default().fg(SUBTLE)), Span::raw(" back  ")]);
+                    }
+                    spans.extend([
+                        Span::styled("[r]", Style::default().fg(BLUE)), Span::raw("efresh  "),
+                        Span::styled("[Tab]", Style::default().fg(SUBTLE)), Span::raw(" tab  "),
+                        Span::styled("[q]", Style::default().fg(SUBTLE)), Span::raw("uit"),
+                    ]);
+                    Line::from(spans)
                 } else {
                     let mut spans = vec![
                         Span::styled("[a]", Style::default().fg(BLUE)), Span::raw("dd  "),
