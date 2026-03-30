@@ -37,6 +37,13 @@ pub struct SshEntry {
     pub fg: String,
     #[serde(default = "default_ssh_bg")]
     pub bg: String,
+    /// "ssh" (default) or "proxmox"
+    #[serde(default = "default_ssh_type")]
+    pub r#type: String,
+}
+
+fn default_ssh_type() -> String {
+    "ssh".into()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -198,6 +205,12 @@ pub fn config_dir() -> PathBuf {
 
 pub fn config_path() -> PathBuf {
     config_dir().join(CONFIG_FILE)
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        default_config()
+    }
 }
 
 pub fn default_config() -> Config {
