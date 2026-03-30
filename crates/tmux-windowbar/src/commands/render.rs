@@ -188,10 +188,21 @@ pub fn run() -> Result<()> {
     let windows = render_windows(&config)?;
     print!("{windows}");
 
-    render_line_users(&config, 0)?;
-    render_line_windows(&config, 2)?;
-    render_line_panes(&config, 3)?;
-    render_line_apps(&config, 4)?;
+    if config.ssh.is_empty() {
+        tmux::run_quiet(&["set", "-g", "@sessionbar_idx", "1"]);
+        render_line_users(&config, 0)?;
+        render_line_windows(&config, 2)?;
+        render_line_panes(&config, 3)?;
+        render_line_apps(&config, 4)?;
+    } else {
+        tmux::run_quiet(&["set", "-g", "@sessionbar_idx", "2"]);
+        tmux::run_quiet(&["set", "-g", "status", "6"]);
+        render_line_ssh(&config, 0)?;
+        render_line_users(&config, 1)?;
+        render_line_windows(&config, 3)?;
+        render_line_panes(&config, 4)?;
+        render_line_apps(&config, 5)?;
+    }
 
     Ok(())
 }
@@ -264,10 +275,21 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
         parts.push(block);
     }
 
-    // SSH hosts
-    let mut ssh_parts = Vec::new();
+    let format = Line::new()
+        .left()
+        .push(&label("Users", &th.users_label))
+        .push(&parts.join(" "))
+        .build();
+    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
+    Ok(())
+}
+
+fn render_line_ssh(config: &Config, idx: usize) -> Result<()> {
+    let th = &config.theme;
     let active_sessions =
         tmux::lines(&["list-sessions", "-F", "#{session_name}"]).unwrap_or_default();
+
+    let mut parts = Vec::new();
     for (i, entry) in config.ssh.iter().enumerate() {
         let range_id = format!("_ssh{i}");
         let session_name = format!("ssh-{}", entry.name);
@@ -290,15 +312,14 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
                 &format!(" {} {} ", entry.emoji, entry.name),
             )
         };
-        ssh_parts.push(block);
+        parts.push(block);
     }
 
-    let mut line = Line::new().left().push(&label("Users", &th.users_label));
-    line = line.push(&parts.join(" "));
-    if !ssh_parts.is_empty() {
-        line = line.push("  ").push(&ssh_parts.join(" "));
-    }
-    let format = line.build();
+    let format = Line::new()
+        .left()
+        .push(&label("SSH", &th.users_label))
+        .push(&parts.join(" "))
+        .build();
     tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
     Ok(())
 }

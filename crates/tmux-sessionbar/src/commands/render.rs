@@ -108,7 +108,9 @@ fn render_left() -> Result<()> {
         fallback_window_list(&left, &right_section)
     };
 
-    tmux::run(&["set", "-g", "status-format[1]", &format])?;
+    // Use line index set by windowbar (defaults to 1, shifts to 2 when SSH line present)
+    let idx = tmux::query_or(&["show", "-gv", "@sessionbar_idx"], "1");
+    tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
 
     Ok(())
 }
