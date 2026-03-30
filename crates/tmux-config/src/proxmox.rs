@@ -52,7 +52,7 @@ pub struct Resources {
     pub cpus: String,
     pub mem_used: String,
     pub mem_total: String,
-    pub disk_used: String,
+    pub _disk_used: String,
     pub disk_total: String,
     pub uptime: String,
     pub ip: String,
@@ -90,7 +90,7 @@ pub fn get_servers(config: &Config) -> Vec<ProxmoxServer> {
 fn ssh_run(user: &str, host: &str, cmd: &str) -> Option<String> {
     let target = format!("{user}@{host}");
     let output = Command::new("ssh")
-        .args(&SSH_OPTS)
+        .args(SSH_OPTS)
         .arg(&target)
         .arg(cmd)
         .output()
@@ -496,11 +496,11 @@ fn fetch_resources(server: &ProxmoxServer, c: &Container) -> Option<Resources> {
         if let Some(ip_out) = ssh_run(&server.user, &server.host,
             &format!("pct exec {} -- hostname -I 2>/dev/null", c.vmid))
         {
-            ip = ip_out.trim().split_whitespace().next().unwrap_or("-").to_string();
+            ip = ip_out.split_whitespace().next().unwrap_or("-").to_string();
         }
     }
 
-    Some(Resources { cpus, mem_used, mem_total, disk_used: "-".into(), disk_total, uptime, ip })
+    Some(Resources { cpus, mem_used, mem_total, _disk_used: "-".into(), disk_total, uptime, ip })
 }
 
 fn fetch_snapshots(server: &ProxmoxServer, c: &Container) -> Vec<Snapshot> {
@@ -645,6 +645,7 @@ pub fn list_local_templates(server: &ProxmoxServer) -> Vec<String> {
 }
 
 /// Create an LXC container.
+#[allow(clippy::too_many_arguments)]
 pub fn create_lxc(server: &ProxmoxServer, vmid: u32, hostname: &str, template: &str,
                   memory: u32, cores: u32, disk: u32, password: &str) -> bool {
     let cmd = format!(
@@ -828,9 +829,9 @@ pub fn display_detail(info: &DetailInfo) -> Vec<Line<'static>> {
             if !d.ports.is_empty() {
                 for port_entry in d.ports.split(", ") {
                     let proto = if port_entry.contains("443") { "https" }
-                        else if port_entry.contains(":80") || port_entry.contains("->80") { "http" }
-                        else if port_entry.contains(":8080") || port_entry.contains("->8080") { "http" }
-                        else if port_entry.contains(":3000") || port_entry.contains("->3000") { "http" }
+                        else if port_entry.contains(":80") || port_entry.contains("->80")
+                             || port_entry.contains(":8080") || port_entry.contains("->8080")
+                             || port_entry.contains(":3000") || port_entry.contains("->3000") { "http" }
                         else if port_entry.contains(":6379") { "redis" }
                         else if port_entry.contains(":5432") { "postgresql" }
                         else if port_entry.contains(":3306") { "mysql" }

@@ -398,7 +398,7 @@ impl App {
                     self.status_msg = None;
                 }
             }
-            KeyCode::Char('4') => { self.tab = Tab::Proxmox; self.status_msg = None; }
+            // '4' is already covered by '1'..='9' above
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
             KeyCode::Up => self.move_up(),
             KeyCode::Char('k') if !(self.tab == Tab::Proxmox && self.pve_depth == 0) => self.move_up(),
@@ -560,7 +560,7 @@ fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) 
                                 }
                             }
                             // List body click — select item
-                            else if y >= body_area.y + 1 && y < body_area.y + body_area.height.saturating_sub(1) {
+                            else if y > body_area.y && y < body_area.y + body_area.height.saturating_sub(1) {
                                 let row = (y - body_area.y - 1) as usize; // -1 for border
                                 let list = app.current_list_mut();
                                 if row < list.len() {

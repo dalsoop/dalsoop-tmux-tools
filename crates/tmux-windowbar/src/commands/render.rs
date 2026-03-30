@@ -271,7 +271,7 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
     for (i, entry) in config.ssh.iter().enumerate() {
         let range_id = format!("_ssh{i}");
         let session_name = format!("ssh-{}", entry.name);
-        let has_session = active_sessions.iter().any(|s| *s == session_name);
+        let has_session = active_sessions.contains(&session_name);
 
         let block = if has_session {
             click(
