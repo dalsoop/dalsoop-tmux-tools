@@ -31,8 +31,6 @@ enum Commands {
     },
     /// Render window list (called by tmux-sessionbar internally)
     Render,
-    /// Output view switcher string (called by tmux-sessionbar)
-    RenderView,
     /// Save current window/pane layout
     LayoutSave {
         /// Layout name
@@ -56,10 +54,6 @@ fn main() {
         Commands::Click { range } => commands::click::run(&range),
         Commands::Dblclick { range } => commands::click::run_dblclick(&range),
         Commands::Render => commands::render::run(),
-        Commands::RenderView => {
-            print!("{}", commands::render::render_view_switcher());
-            Ok(())
-        }
         Commands::LayoutSave { name } => commands::layout::save(&name),
         Commands::LayoutLoad { name } => commands::layout::load(&name),
         Commands::LayoutList => commands::layout::list(),
