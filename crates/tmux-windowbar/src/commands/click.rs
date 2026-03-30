@@ -2,7 +2,6 @@ use crate::config::template::load_config;
 use anyhow::{Result, bail};
 use tmux_fmt::tmux;
 
-const CONFIRM_FILE: &str = "/tmp/tmux-pending-confirm.conf";
 const RENAME_FILE: &str = "/tmp/tmux-pending-rename.conf";
 
 pub fn run(range: &str) -> Result<()> {
@@ -57,14 +56,14 @@ pub fn run(range: &str) -> Result<()> {
     } else if let Some(target) = range.strip_prefix("_wx") {
         if let Some((sess, win)) = target.split_once('.') {
             let kill_cmd = format!("kill-window -t ={sess}:{win}");
-            confirm_and_run(&format!("Kill window '{sess}:{win}'?"), &kill_cmd)?;
+            tmux::confirm(&format!("Kill window '{sess}:{win}'?"), &kill_cmd)?;
         }
     } else if let Some(target) = range.strip_prefix("_px") {
         let parts: Vec<&str> = target.splitn(3, '.').collect();
         if parts.len() == 3 {
             let (sess, win, pane) = (parts[0], parts[1], parts[2]);
             let kill_cmd = format!("kill-pane -t ={sess}:{win}.{pane}");
-            confirm_and_run(&format!("Kill pane '{sess}.{win}.{pane}'?"), &kill_cmd)?;
+            tmux::confirm(&format!("Kill pane '{sess}.{win}.{pane}'?"), &kill_cmd)?;
         }
     } else if let Some(target) = range.strip_prefix("_pp") {
         let parts: Vec<&str> = target.splitn(3, '.').collect();
@@ -112,7 +111,7 @@ fn kill_window(idx: &str) -> Result<()> {
     }
 
     let kill_cmd = format!("kill-window -t :{idx}");
-    confirm_and_run(&format!("Kill window '{idx}'?"), &kill_cmd)?;
+    tmux::confirm(&format!("Kill window '{idx}'?"), &kill_cmd)?;
 
     Ok(())
 }
@@ -138,14 +137,6 @@ fn switch_to_existing_app(command: &str) -> Result<bool> {
         }
     }
     Ok(false)
-}
-
-fn confirm_and_run(title: &str, cmd: &str) -> Result<()> {
-    let safe_title = tmux::sanitize(title);
-    let safe_cmd = tmux::sanitize(cmd);
-    let content = format!("confirm-before -p \"{safe_title} (y/n)\" \"{safe_cmd}\"");
-    std::fs::write(CONFIRM_FILE, content)?;
-    Ok(())
 }
 
 fn write_rename_prompt(content: &str) -> Result<()> {

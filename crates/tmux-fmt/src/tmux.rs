@@ -20,6 +20,7 @@
 //! ```
 
 use anyhow::{Context, Result};
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Build a `Command` for tmux, respecting `TMUX_SOCKET` env var.
@@ -82,6 +83,79 @@ pub fn lines(args: &[&str]) -> Result<Vec<String>> {
         .filter(|l| !l.is_empty())
         .map(String::from)
         .collect())
+}
+
+// ── Config loader ──
+
+/// Load a TOML config file, returning a default value if the file does not exist.
+///
+/// If the file exists, it is read and parsed with `toml::from_str`.
+/// If it does not exist, `default()` is called to produce a value.
+pub fn load_toml_config<T: serde::de::DeserializeOwned>(
+    path: &std::path::Path,
+    default: impl FnOnce() -> T,
+) -> anyhow::Result<T> {
+    if path.exists() {
+        let content = std::fs::read_to_string(path)?;
+        Ok(toml::from_str(&content)?)
+    } else {
+        Ok(default())
+    }
+}
+
+// ── Session filtering ──
+
+/// Returns `true` if `name` should be shown for the given `view_user`.
+///
+/// When `view_user` is empty, all sessions are shown.
+/// Otherwise, only the exact matching session and unowned sessions (for root) are shown.
+///
+/// An "unowned" session is one whose name does not start with an alphabetic character,
+/// indicating it was not created by a named user.
+pub fn should_show_for_user(name: &str, view_user: &str) -> bool {
+    if view_user.is_empty() {
+        return true;
+    }
+    let is_user_session = name == view_user;
+    let is_unowned = !name.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false);
+    let belongs_to_root = is_unowned && view_user == "root";
+    is_user_session || belongs_to_root
+}
+
+// ── Home directory ──
+
+/// Returns the current user's home directory.
+///
+/// Falls back to `/root` if the `HOME` environment variable is not set.
+pub fn home_dir() -> PathBuf {
+    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/root".into()))
+}
+
+// ── Confirm dialog ──
+
+const CONFIRM_FILE: &str = "/tmp/tmux-pending-confirm.conf";
+
+/// Write a confirm-before prompt to the shared confirm file.
+///
+/// When the user answers "y", tmux executes `cmd`.
+/// Both `title` and `cmd` are sanitized before embedding.
+pub fn confirm(title: &str, cmd: &str) -> Result<()> {
+    let safe_title = sanitize(title);
+    let safe_cmd = sanitize(cmd);
+    let content = format!("confirm-before -p \"{safe_title} (y/n)\" \"{safe_cmd}\"");
+    std::fs::write(CONFIRM_FILE, content)?;
+    Ok(())
+}
+
+/// Write a confirm-before prompt with a raw (pre-built) command string.
+///
+/// Use this when `cmd` contains tmux sub-commands (e.g. `run-shell '...'`)
+/// that should not be sanitized. `title` is still sanitized.
+pub fn confirm_raw(title: &str, cmd: &str) -> Result<()> {
+    let safe_title = sanitize(title);
+    let content = format!("confirm-before -p \"{safe_title} (y/n)\" \"{cmd}\"");
+    std::fs::write(CONFIRM_FILE, content)?;
+    Ok(())
 }
 
 // ── Sanitization ──

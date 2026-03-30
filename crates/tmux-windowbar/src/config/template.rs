@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use tmux_fmt::theme::*;
+use tmux_fmt::tmux;
 
 pub const CONFIG_DIR: &str = ".config/tmux-windowbar";
 pub const CONFIG_FILE: &str = "config.toml";
@@ -125,32 +127,8 @@ pub struct WindowConfig {
     pub idle_bg: String,
 }
 
-fn default_true() -> bool {
-    true
-}
-fn default_fg() -> String {
-    "#abb2bf".into()
-}
-fn default_bg() -> String {
-    "#282c34".into()
-}
-fn default_active_fg() -> String {
-    "#282c34".into()
-}
-fn default_active_bg() -> String {
-    "#98c379".into()
-}
-fn default_kill_fg() -> String {
-    "#e06c75".into()
-}
 fn default_kill_bg() -> String {
     "#282c34".into()
-}
-fn default_button_fg() -> String {
-    "#282c34".into()
-}
-fn default_button_bg() -> String {
-    "#61afef".into()
 }
 fn default_running_fg() -> String {
     "#282c34".into()
@@ -220,15 +198,11 @@ fn default_user_session_bg() -> String {
 }
 
 pub fn config_dir() -> PathBuf {
-    home_dir().join(CONFIG_DIR)
+    tmux::home_dir().join(CONFIG_DIR)
 }
 
 pub fn config_path() -> PathBuf {
     config_dir().join(CONFIG_FILE)
-}
-
-fn home_dir() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/root".into()))
 }
 
 pub fn default_config() -> Config {
@@ -415,13 +389,7 @@ pub fn default_config() -> Config {
 }
 
 pub fn load_config() -> anyhow::Result<Config> {
-    let path = config_path();
-    if path.exists() {
-        let content = std::fs::read_to_string(&path)?;
-        Ok(toml::from_str(&content)?)
-    } else {
-        Ok(default_config())
-    }
+    tmux::load_toml_config(&config_path(), default_config)
 }
 
 #[cfg(test)]

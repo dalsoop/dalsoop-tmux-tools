@@ -27,17 +27,8 @@ fn render_left() -> Result<()> {
 
     let mut parts = Vec::new();
     for name in &sessions {
-        if !view_user.is_empty() {
-            let is_user_session = name == &view_user;
-            let is_unowned = !name
-                .chars()
-                .next()
-                .map(|c| c.is_alphabetic())
-                .unwrap_or(false);
-            let belongs_to_root = is_unowned && view_user == "root";
-            if !is_user_session && !belongs_to_root {
-                continue;
-            }
+        if !tmux::should_show_for_user(name, &view_user) {
+            continue;
         }
         let mut block = if *name == current {
             click(
@@ -57,7 +48,7 @@ fn render_left() -> Result<()> {
             )
         };
 
-        if sl.show_kill_button && *name != current {
+        if sl.show_kill_button {
             block.push_str(&click(
                 &format!("_k{name}"),
                 &sl.kill_fg,

@@ -83,17 +83,8 @@ fn render_all_windows(config: &Config) -> Result<String> {
         let mut split = line.splitn(3, ':');
         let sess = split.next().unwrap_or("");
 
-        if !view_user.is_empty() {
-            let is_user_session = sess == view_user;
-            let is_unowned = !sess
-                .chars()
-                .next()
-                .map(|c| c.is_alphabetic())
-                .unwrap_or(false);
-            let belongs_to_root = is_unowned && view_user == "root";
-            if !is_user_session && !belongs_to_root {
-                continue;
-            }
+        if !tmux::should_show_for_user(sess, &view_user) {
+            continue;
         }
         let idx = split.next().unwrap_or("");
         let name = split.next().unwrap_or("");
@@ -101,26 +92,15 @@ fn render_all_windows(config: &Config) -> Result<String> {
         let is_active = sess == current_session && idx == current_window;
         let range_id = format!("_wa{sess}.{idx}");
 
-        let block = if is_active {
-            click(
-                &range_id,
-                &w.active_fg,
-                &w.active_bg,
-                true,
-                &format!(" {sess}.{idx}:{name} "),
-            )
+        let display = format!(" {sess}.{idx}:{name} ");
+        let kill_id = format!("_wx{sess}.{idx}");
+        let (fg, bg, bold) = if is_active {
+            (&w.active_fg, &w.active_bg, true)
         } else {
-            let kill_id = format!("_wx{sess}.{idx}");
-            let mut b = click(
-                &range_id,
-                &w.fg,
-                &w.bg,
-                false,
-                &format!(" {sess}.{idx}:{name} "),
-            );
-            b.push_str(&click(&kill_id, &w.kill_fg, &w.kill_bg, false, " x "));
-            b
+            (&w.fg, &w.bg, false)
         };
+        let mut block = click(&range_id, fg, bg, bold, &display);
+        block.push_str(&click(&kill_id, &w.kill_fg, &w.kill_bg, false, " x "));
 
         parts.push(block);
     }
@@ -152,17 +132,8 @@ fn render_panes(config: &Config) -> Result<String> {
         let pane = split.next().unwrap_or("");
         let cmd = split.next().unwrap_or("");
 
-        if !view_user.is_empty() {
-            let is_user_session = sess == view_user;
-            let is_unowned = !sess
-                .chars()
-                .next()
-                .map(|c| c.is_alphabetic())
-                .unwrap_or(false);
-            let belongs_to_root = is_unowned && view_user == "root";
-            if !is_user_session && !belongs_to_root {
-                continue;
-            }
+        if !tmux::should_show_for_user(sess, &view_user) {
+            continue;
         }
 
         let is_active = sess == current_session && win == current_window && pane == current_pane;
@@ -174,8 +145,11 @@ fn render_panes(config: &Config) -> Result<String> {
             "bash" | "zsh" | "fish" | "sh" | "dash" | "ksh" | "csh" | "tcsh"
         );
 
+        let kill_id = format!("_px{sess}.{win}.{pane}");
         let block = if is_active {
-            click(&range_id, &w.active_fg, &w.active_bg, true, &display)
+            let mut b = click(&range_id, &w.active_fg, &w.active_bg, true, &display);
+            b.push_str(&click(&kill_id, &w.kill_fg, &w.kill_bg, false, " x "));
+            b
         } else {
             let (fg, bg) = if let Some(c) = config.colors.get(cmd) {
                 (c.fg.clone(), c.bg.clone())
@@ -184,7 +158,6 @@ fn render_panes(config: &Config) -> Result<String> {
             } else {
                 (w.running_fg.clone(), w.running_bg.clone())
             };
-            let kill_id = format!("_px{sess}.{win}.{pane}");
             let mut b = click(&range_id, &fg, &bg, false, &display);
             b.push_str(&click(&kill_id, &w.kill_fg, &w.kill_bg, false, " x "));
             b
