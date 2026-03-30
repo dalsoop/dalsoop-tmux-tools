@@ -1,4 +1,5 @@
 mod apps;
+mod settings;
 mod ssh;
 
 use anyhow::Result;
@@ -7,7 +8,7 @@ use tmux_windowbar::config::template::Config;
 
 fn main() -> Result<()> {
     loop {
-        let items = &["SSH Hosts", "Apps", "Exit"];
+        let items = &["SSH Hosts", "Apps", "Settings", "Exit"];
         let selection = Select::with_theme(&ColorfulTheme::default())
             .with_prompt("tmux-config")
             .items(items)
@@ -17,7 +18,8 @@ fn main() -> Result<()> {
         match selection {
             0 => ssh::manage()?,
             1 => apps::manage()?,
-            2 => break,
+            2 => settings::manage()?,
+            3 => break,
             _ => break,
         }
     }
