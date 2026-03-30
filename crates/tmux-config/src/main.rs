@@ -162,6 +162,51 @@ impl App {
         self.status_msg = Some("Deleted.".into());
     }
 
+    /// Connect to SSH host: exit TUI, create/switch tmux session.
+    /// Returns true to signal app exit.
+    fn connect_ssh(&mut self) -> bool {
+        let idx = match self.ssh.selected() {
+            Some(i) => i,
+            None => return false,
+        };
+        let entry = &self.config.ssh[idx];
+        let session_name = format!("ssh-{}", entry.name);
+        let ssh_target = if let Some(ref user) = entry.user {
+            format!("{user}@{}", entry.host)
+        } else {
+            entry.host.clone()
+        };
+
+        // Check if session exists
+        let has = std::process::Command::new("tmux")
+            .args(["has-session", "-t", &format!("={session_name}")])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if !has {
+            // Create auto-reconnecting SSH session
+            let ssh_cmd = format!(
+                "while true; do ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 {ssh_target}; RC=$?; if [ $RC -eq 0 ]; then break; fi; echo '[연결 끊김 - 5초 후 재접속]'; sleep 5; done"
+            );
+            let _ = std::process::Command::new("tmux")
+                .args(["new-session", "-d", "-s", &session_name, &ssh_cmd])
+                .status();
+        }
+
+        // Switch to it
+        let _ = std::process::Command::new("tmux")
+            .args(["switch-client", "-t", &format!("={session_name}")])
+            .status();
+
+        // Re-render status bar
+        let _ = std::process::Command::new("tmux-sessionbar")
+            .args(["render-status", "left"])
+            .status();
+
+        true // exit TUI
+    }
+
     fn cancel(&mut self) {
         self.form = None;
         self.mode = Mode::Normal;
@@ -228,6 +273,7 @@ impl App {
             KeyCode::Char('a') => self.start_add(),
             KeyCode::Char('e') | KeyCode::Enter => self.start_edit(),
             KeyCode::Char('d') => self.start_delete(),
+            KeyCode::Char('c') if self.tab == Tab::Ssh => return self.connect_ssh(),
             _ => {}
         }
         false
@@ -427,13 +473,22 @@ fn render_hint(f: &mut ratatui::Frame, app: &App, area: Rect) {
         Line::from(Span::styled(msg.clone(), Style::default().fg(GREEN)))
     } else {
         match app.mode {
-            Mode::Normal => Line::from(vec![
-                Span::styled("[a]", Style::default().fg(BLUE)), Span::raw("dd  "),
-                Span::styled("[e]", Style::default().fg(BLUE)), Span::raw("dit  "),
-                Span::styled("[d]", Style::default().fg(RED)),  Span::raw("elete  "),
-                Span::styled("[Tab]", Style::default().fg(SUBTLE)), Span::raw(" switch tab  "),
-                Span::styled("[q]", Style::default().fg(SUBTLE)), Span::raw("uit"),
-            ]),
+            Mode::Normal => {
+                let mut spans = vec![
+                    Span::styled("[a]", Style::default().fg(BLUE)), Span::raw("dd  "),
+                    Span::styled("[e]", Style::default().fg(BLUE)), Span::raw("dit  "),
+                    Span::styled("[d]", Style::default().fg(RED)),  Span::raw("elete  "),
+                ];
+                if app.tab == Tab::Ssh {
+                    spans.push(Span::styled("[c]", Style::default().fg(GREEN)));
+                    spans.push(Span::raw("onnect  "));
+                }
+                spans.push(Span::styled("[Tab]", Style::default().fg(SUBTLE)));
+                spans.push(Span::raw(" switch tab  "));
+                spans.push(Span::styled("[q]", Style::default().fg(SUBTLE)));
+                spans.push(Span::raw("uit"));
+                Line::from(spans)
+            }
             Mode::Editing => Line::from(vec![
                 Span::styled("[Tab]", Style::default().fg(BLUE)), Span::raw(" next field  "),
                 Span::styled("[Enter]", Style::default().fg(GREEN)), Span::raw(" save  "),
