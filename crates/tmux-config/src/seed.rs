@@ -21,6 +21,7 @@ pub const SEEDS: &[SeedApp] = &[
     SeedApp { emoji: "🐳", command: "lazydocker", description: "Docker TUI",        fg: "#282c34", bg: "#61afef", brew: "lazydocker", apt: "",           npm: "", go: "github.com/jesseduffield/lazydocker@latest" },
     SeedApp { emoji: "🤖", command: "claude",     description: "Claude Code",       fg: "#282c34", bg: "#61afef", brew: "",           apt: "",           npm: "@anthropic-ai/claude-code", go: "" },
     SeedApp { emoji: "🧠", command: "codex",      description: "OpenAI Codex CLI",  fg: "#282c34", bg: "#98c379", brew: "",           apt: "",           npm: "@openai/codex", go: "" },
+    SeedApp { emoji: "💎", command: "gemini",     description: "Gemini CLI",        fg: "#282c34", bg: "#e5c07b", brew: "",           apt: "",           npm: "@google/gemini-cli", go: "" },
     SeedApp { emoji: "🔍", command: "btop",       description: "Resource monitor",  fg: "#282c34", bg: "#c678dd", brew: "btop",       apt: "btop",       npm: "", go: "" },
     SeedApp { emoji: "📡", command: "bandwhich",  description: "Network monitor",   fg: "#282c34", bg: "#56b6c2", brew: "bandwhich",  apt: "",           npm: "", go: "" },
     SeedApp { emoji: "🌐", command: "opencode",   description: "OpenCode CLI",      fg: "#282c34", bg: "#98c379", brew: "",           apt: "",           npm: "", go: "github.com/opencode-ai/opencode@latest" },
@@ -145,6 +146,82 @@ pub fn install_method(seed: &SeedApp) -> &'static str {
         }
     }
     "-"
+}
+
+/// Build a remote install script that handles dependencies.
+/// Returns a shell script string to run on the remote host.
+pub fn remote_install_script(seed: &SeedApp) -> Option<String> {
+    // npm-based apps (claude, codex, gemini)
+    if !seed.npm.is_empty() {
+        return Some(format!(
+            r#"set -e
+# Ensure Node.js + npm are available
+if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+  echo "[+] Installing Node.js..."
+  if command -v apt-get >/dev/null 2>&1; then
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs npm
+  elif command -v brew >/dev/null 2>&1; then
+    brew install node
+  else
+    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
+    export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.sh" && nvm install 22
+  fi
+fi
+echo "[+] Installing {name} via npm..."
+npm install -g {pkg}
+echo "[✓] {name} installed"
+"#,
+            name = seed.command,
+            pkg = seed.npm,
+        ));
+    }
+
+    // apt-based apps
+    if !seed.apt.is_empty() {
+        return Some(format!(
+            r#"set -e
+if command -v apt-get >/dev/null 2>&1; then
+  echo "[+] Installing {name} via apt..."
+  apt-get update -qq && apt-get install -y {pkg}
+  echo "[✓] {name} installed"
+else
+  echo "[✗] apt not available"
+  exit 1
+fi
+"#,
+            name = seed.command,
+            pkg = seed.apt,
+        ));
+    }
+
+    // go-based apps
+    if !seed.go.is_empty() {
+        return Some(format!(
+            r#"set -e
+if ! command -v go >/dev/null 2>&1; then
+  echo "[+] Installing Go..."
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y golang
+  else
+    echo "[✗] Cannot install Go automatically"
+    exit 1
+  fi
+fi
+echo "[+] Installing {name} via go..."
+go install {pkg}
+echo "[✓] {name} installed"
+"#,
+            name = seed.command,
+            pkg = seed.go,
+        ));
+    }
+
+    None
+}
+
+/// Find a seed by command name.
+pub fn find(command: &str) -> Option<&'static SeedApp> {
+    SEEDS.iter().find(|s| s.command == command)
 }
 
 #[cfg(test)]

@@ -1135,6 +1135,8 @@ fn cli_dispatch(args: &[String]) -> Result<()> {
             println!("  connect-all            Open tmux sessions for all SSH hosts");
             println!("  exec-all <command>     Run command on all SSH hosts");
             println!("  status                 Check connectivity of all hosts");
+            println!("  deploy <app> [host]    Install app on all hosts (or specific host)");
+            println!("                         Apps: claude, codex, gemini, htop, btop, lazygit...");
             Ok(())
         }
 
@@ -1390,6 +1392,58 @@ fn cli_dispatch(args: &[String]) -> Result<()> {
                         println!("✗ {first_line}");
                     }
                     Err(e) => println!("✗ {e}"),
+                }
+            }
+            Ok(())
+        }
+
+        "deploy" => {
+            if args.len() < 2 { anyhow::bail!("Usage: deploy <app> [host]\nApps: claude, codex, gemini, htop, btop, lazygit, lazydocker, opencode"); }
+            let app_name = &args[1];
+            let target_host = args.get(2).map(|s| s.as_str());
+
+            let app = seed::find(app_name)
+                .ok_or_else(|| anyhow::anyhow!("Unknown app: {app_name}. Available: claude, codex, gemini, htop, btop, lazygit, lazydocker, opencode"))?;
+            let script = seed::remote_install_script(app)
+                .ok_or_else(|| anyhow::anyhow!("No remote install method for {app_name}"))?;
+
+            let config = load_config()?;
+            let hosts: Vec<_> = config.ssh.iter()
+                .filter(|e| e.r#type != "proxmox-api")
+                .filter(|e| target_host.is_none() || target_host == Some(e.name.as_str()))
+                .collect();
+
+            if hosts.is_empty() {
+                anyhow::bail!("No matching hosts found");
+            }
+
+            for e in &hosts {
+                let user = e.user.as_deref().unwrap_or("root");
+                let target = format!("{user}@{}", e.host);
+                println!("── {} ({}) ──", e.name, target);
+
+                // Check if already installed
+                let already = std::process::Command::new("ssh")
+                    .args(["-o", "ConnectTimeout=5", "-o", "BatchMode=yes", &target,
+                           &format!("command -v {} >/dev/null 2>&1 && echo yes || echo no", app.command)])
+                    .output().ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+                if already.as_deref() == Some("yes") {
+                    println!("  ✓ {} already installed", app.command);
+                    continue;
+                }
+
+                // Run install script
+                let result = std::process::Command::new("ssh")
+                    .args(["-o", "ConnectTimeout=30", "-o", "BatchMode=yes", &target, &script])
+                    .status();
+
+                match result {
+                    Ok(s) if s.success() => println!("  ✓ {} installed", app.command),
+                    Ok(_) => println!("  ✗ {} install failed", app.command),
+                    Err(e) => println!("  ✗ connection error: {e}"),
                 }
             }
             Ok(())
