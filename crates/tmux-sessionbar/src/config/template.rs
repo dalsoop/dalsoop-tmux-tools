@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use tmux_fmt::theme::*;
+use tmux_fmt::tmux;
 
 pub const CONFIG_DIR: &str = ".config/tmux-sessionbar";
 pub const CONFIG_FILE: &str = "config.toml";
@@ -214,20 +216,8 @@ fn default_interval() -> u32 {
 fn default_position() -> String {
     "top".into()
 }
-fn default_bg() -> String {
-    "#282c34".into()
-}
-fn default_fg() -> String {
-    "#abb2bf".into()
-}
 fn default_length() -> u32 {
     120
-}
-fn default_active_fg() -> String {
-    "#282c34".into()
-}
-fn default_active_bg() -> String {
-    "#98c379".into()
 }
 fn default_inactive_fg() -> String {
     "#abb2bf".into()
@@ -253,23 +243,11 @@ fn default_datetime_bg() -> String {
 fn default_datetime_format() -> String {
     " %H:%M ".into()
 }
-fn default_true() -> bool {
-    true
-}
 fn default_history_limit() -> u32 {
     5000
 }
 fn default_clear_interval() -> u32 {
     30
-}
-fn default_button_fg() -> String {
-    "#282c34".into()
-}
-fn default_button_bg() -> String {
-    "#61afef".into()
-}
-fn default_kill_fg() -> String {
-    "#e06c75".into()
 }
 fn default_label_fg() -> String {
     "#98c379".into()
@@ -350,7 +328,7 @@ fn default_plugins() -> Vec<PluginEntry> {
 }
 
 pub fn config_dir() -> PathBuf {
-    dirs_home().join(CONFIG_DIR)
+    tmux::home_dir().join(CONFIG_DIR)
 }
 
 pub fn config_path() -> PathBuf {
@@ -359,14 +337,6 @@ pub fn config_path() -> PathBuf {
 
 pub fn bin_dir() -> PathBuf {
     config_dir().join(BIN_DIR)
-}
-
-pub fn shim_path(name: &str) -> PathBuf {
-    bin_dir().join(name)
-}
-
-fn dirs_home() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/root".into()))
 }
 
 pub fn default_config() -> Config {
@@ -410,11 +380,5 @@ pub fn default_config() -> Config {
 }
 
 pub fn load_config() -> anyhow::Result<Config> {
-    let path = config_path();
-    if path.exists() {
-        let content = std::fs::read_to_string(&path)?;
-        Ok(toml::from_str(&content)?)
-    } else {
-        Ok(default_config())
-    }
+    tmux::load_toml_config(&config_path(), default_config)
 }

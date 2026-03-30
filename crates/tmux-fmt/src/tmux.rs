@@ -20,6 +20,7 @@
 //! ```
 
 use anyhow::{Context, Result};
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Build a `Command` for tmux, respecting `TMUX_SOCKET` env var.
@@ -84,27 +85,50 @@ pub fn lines(args: &[&str]) -> Result<Vec<String>> {
         .collect())
 }
 
-// ── Sanitization ──
+// ── Config loader ──
 
-/// Sanitize a string for safe embedding in tmux command strings.
+/// Load a TOML config file, returning a default value if the file does not exist.
 ///
-/// Removes characters that could break tmux command parsing or enable
-/// command injection: quotes, backslashes, semicolons, `#`, backticks,
-/// `$`, curly braces, newlines, and null bytes.
+/// If the file exists, it is read and parsed with `toml::from_str`.
+/// If it does not exist, `default()` is called to produce a value.
+pub fn load_toml_config<T: serde::de::DeserializeOwned>(
+    path: &std::path::Path,
+    default: impl FnOnce() -> T,
+) -> anyhow::Result<T> {
+    if path.exists() {
+        let content = std::fs::read_to_string(path)?;
+        Ok(toml::from_str(&content)?)
+    } else {
+        Ok(default())
+    }
+}
+
+// ── Session filtering ──
+
+/// Returns `true` if `name` should be shown for the given `view_user`.
 ///
-/// Curly braces are filtered because tmux interprets `#{...}` as format
-/// strings; user input containing `{` or `}` could be interpreted as a
-/// tmux format expression (e.g. `#{shell-command:...}`) if passed to a
-/// tmux command without sanitization.
-pub fn sanitize(s: &str) -> String {
-    s.chars()
-        .filter(|c| {
-            !matches!(
-                c,
-                '\'' | '"' | '\\' | ';' | '#' | '`' | '$' | '{' | '}' | '\n' | '\r' | '\0'
-            )
-        })
-        .collect()
+/// When `view_user` is empty, all sessions are shown.
+/// Otherwise, only the exact matching session and unowned sessions (for root) are shown.
+///
+/// An "unowned" session is one whose name does not start with an alphabetic character,
+/// indicating it was not created by a named user.
+pub fn should_show_for_user(name: &str, view_user: &str) -> bool {
+    if view_user.is_empty() {
+        return true;
+    }
+    let is_user_session = name == view_user;
+    let is_unowned = !name.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false);
+    let belongs_to_root = is_unowned && view_user == "root";
+    is_user_session || belongs_to_root
+}
+
+// ── Home directory ──
+
+/// Returns the current user's home directory.
+///
+/// Falls back to `/root` if the `HOME` environment variable is not set.
+pub fn home_dir() -> PathBuf {
+    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/root".into()))
 }
 
 // ── Confirm dialog ──
@@ -132,6 +156,29 @@ pub fn confirm_raw(title: &str, cmd: &str) -> Result<()> {
     let content = format!("confirm-before -p \"{safe_title} (y/n)\" \"{cmd}\"");
     std::fs::write(CONFIRM_FILE, content)?;
     Ok(())
+}
+
+// ── Sanitization ──
+
+/// Sanitize a string for safe embedding in tmux command strings.
+///
+/// Removes characters that could break tmux command parsing or enable
+/// command injection: quotes, backslashes, semicolons, `#`, backticks,
+/// `$`, curly braces, newlines, and null bytes.
+///
+/// Curly braces are filtered because tmux interprets `#{...}` as format
+/// strings; user input containing `{` or `}` could be interpreted as a
+/// tmux format expression (e.g. `#{shell-command:...}`) if passed to a
+/// tmux command without sanitization.
+pub fn sanitize(s: &str) -> String {
+    s.chars()
+        .filter(|c| {
+            !matches!(
+                c,
+                '\'' | '"' | '\\' | ';' | '#' | '`' | '$' | '{' | '}' | '\n' | '\r' | '\0'
+            )
+        })
+        .collect()
 }
 
 // ── Re-entrancy guard ──

@@ -29,6 +29,8 @@
 //!     .build();
 //! ```
 
+pub mod shims;
+pub mod theme;
 pub mod tmux;
 
 use std::fmt;
