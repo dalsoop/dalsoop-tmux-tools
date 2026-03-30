@@ -32,7 +32,10 @@ impl ListView {
         self.state.selected()
     }
 
-    #[allow(dead_code)]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
     pub fn select(&mut self, idx: usize) {
         if self.len > 0 && idx < self.len {
             self.state.select(Some(idx));

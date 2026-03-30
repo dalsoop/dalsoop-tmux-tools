@@ -10,26 +10,29 @@ use ratatui::{
 pub enum Tab {
     Ssh,
     Apps,
+    Containers,
     Settings,
 }
 
 impl Tab {
     pub fn titles() -> Vec<&'static str> {
-        vec!["SSH", "Apps", "Settings"]
+        vec!["SSH", "Apps", "Containers", "Settings"]
     }
 
     pub fn index(self) -> usize {
         match self {
-            Tab::Ssh => 0,
-            Tab::Apps => 1,
-            Tab::Settings => 2,
+            Tab::Ssh        => 0,
+            Tab::Apps       => 1,
+            Tab::Containers => 2,
+            Tab::Settings   => 3,
         }
     }
 
     pub fn from_index(idx: usize) -> Self {
         match idx {
             1 => Tab::Apps,
-            2 => Tab::Settings,
+            2 => Tab::Containers,
+            3 => Tab::Settings,
             _ => Tab::Ssh,
         }
     }
