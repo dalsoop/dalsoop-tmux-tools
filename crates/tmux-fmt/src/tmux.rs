@@ -107,6 +107,33 @@ pub fn sanitize(s: &str) -> String {
         .collect()
 }
 
+// ── Confirm dialog ──
+
+const CONFIRM_FILE: &str = "/tmp/tmux-pending-confirm.conf";
+
+/// Write a confirm-before prompt to the shared confirm file.
+///
+/// When the user answers "y", tmux executes `cmd`.
+/// Both `title` and `cmd` are sanitized before embedding.
+pub fn confirm(title: &str, cmd: &str) -> Result<()> {
+    let safe_title = sanitize(title);
+    let safe_cmd = sanitize(cmd);
+    let content = format!("confirm-before -p \"{safe_title} (y/n)\" \"{safe_cmd}\"");
+    std::fs::write(CONFIRM_FILE, content)?;
+    Ok(())
+}
+
+/// Write a confirm-before prompt with a raw (pre-built) command string.
+///
+/// Use this when `cmd` contains tmux sub-commands (e.g. `run-shell '...'`)
+/// that should not be sanitized. `title` is still sanitized.
+pub fn confirm_raw(title: &str, cmd: &str) -> Result<()> {
+    let safe_title = sanitize(title);
+    let content = format!("confirm-before -p \"{safe_title} (y/n)\" \"{cmd}\"");
+    std::fs::write(CONFIRM_FILE, content)?;
+    Ok(())
+}
+
 // ── Re-entrancy guard ──
 
 /// Guard that prevents recursive/concurrent invocations via a tmux timestamp variable.
