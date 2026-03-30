@@ -264,11 +264,41 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
         parts.push(block);
     }
 
-    let format = Line::new()
-        .left()
-        .push(&label("Users", &th.users_label))
-        .push(&parts.join(" "))
-        .build();
+    // SSH hosts
+    let mut ssh_parts = Vec::new();
+    let active_sessions =
+        tmux::lines(&["list-sessions", "-F", "#{session_name}"]).unwrap_or_default();
+    for (i, entry) in config.ssh.iter().enumerate() {
+        let range_id = format!("_ssh{i}");
+        let session_name = format!("ssh-{}", entry.name);
+        let has_session = active_sessions.iter().any(|s| *s == session_name);
+
+        let block = if has_session {
+            click(
+                &range_id,
+                &th.ssh_connected_fg,
+                &th.ssh_connected_bg,
+                true,
+                &format!(" {} {} ", entry.emoji, entry.name),
+            )
+        } else {
+            click(
+                &range_id,
+                &entry.fg,
+                &entry.bg,
+                false,
+                &format!(" {} {} ", entry.emoji, entry.name),
+            )
+        };
+        ssh_parts.push(block);
+    }
+
+    let mut line = Line::new().left().push(&label("Users", &th.users_label));
+    line = line.push(&parts.join(" "));
+    if !ssh_parts.is_empty() {
+        line = line.push("  ").push(&ssh_parts.join(" "));
+    }
+    let format = line.build();
     tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
     Ok(())
 }

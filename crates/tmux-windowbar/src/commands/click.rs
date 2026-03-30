@@ -15,6 +15,33 @@ pub fn run(range: &str) -> Result<()> {
                 }
             }
         }
+    } else if let Some(idx_str) = range.strip_prefix("_ssh") {
+        if let Ok(idx) = idx_str.parse::<usize>() {
+            let config = load_config()?;
+            if let Some(entry) = config.ssh.get(idx) {
+                let session_name = format!("ssh-{}", entry.name);
+                let ssh_target = if let Some(ref user) = entry.user {
+                    format!("{user}@{}", entry.host)
+                } else {
+                    entry.host.clone()
+                };
+
+                let has = tmux::run(&["has-session", "-t", &format!("={session_name}")]).is_ok();
+                if has {
+                    tmux::run(&["switch-client", "-t", &format!("={session_name}")])?;
+                } else {
+                    // Auto-reconnecting SSH session
+                    let ssh_cmd = format!(
+                        "while true; do ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 {ssh_target}; echo '[연결 끊김 - 5초 후 재접속]'; sleep 5; done"
+                    );
+                    tmux::run(&["new-session", "-d", "-s", &session_name, &ssh_cmd])?;
+                    tmux::run(&["switch-client", "-t", &format!("={session_name}")])?;
+                }
+                let _ = std::process::Command::new("tmux-sessionbar")
+                    .args(["render-status", "left"])
+                    .status();
+            }
+        }
     } else if let Some(user) = range.strip_prefix("_u") {
         tmux::run(&["set", "-g", "@view_user", user])?;
 

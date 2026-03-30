@@ -25,6 +25,20 @@ pub struct AppEntry {
     pub mode: String, // "window" or "pane"
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SshEntry {
+    pub name: String,
+    pub host: String,
+    #[serde(default)]
+    pub user: Option<String>,
+    #[serde(default = "default_ssh_emoji")]
+    pub emoji: String,
+    #[serde(default = "default_ssh_fg")]
+    pub fg: String,
+    #[serde(default = "default_ssh_bg")]
+    pub bg: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub window: WindowConfig,
@@ -34,6 +48,8 @@ pub struct Config {
     pub colors: HashMap<String, ColorEntry>,
     #[serde(default)]
     pub apps: Vec<AppEntry>,
+    #[serde(default)]
+    pub ssh: Vec<SshEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -56,6 +72,11 @@ pub struct ThemeConfig {
     pub user_session_fg: String,
     #[serde(default = "default_user_session_bg")]
     pub user_session_bg: String,
+    // SSH connected state
+    #[serde(default = "default_ssh_connected_fg")]
+    pub ssh_connected_fg: String,
+    #[serde(default = "default_ssh_connected_bg")]
+    pub ssh_connected_bg: String,
 }
 
 impl Default for ThemeConfig {
@@ -69,6 +90,8 @@ impl Default for ThemeConfig {
             user_viewed_bg: default_user_viewed_bg(),
             user_session_fg: default_user_session_fg(),
             user_session_bg: default_user_session_bg(),
+            ssh_connected_fg: default_ssh_connected_fg(),
+            ssh_connected_bg: default_ssh_connected_bg(),
         }
     }
 }
@@ -152,6 +175,21 @@ fn default_user_session_fg() -> String {
 }
 fn default_user_session_bg() -> String {
     "#56b6c2".into()
+}
+fn default_ssh_emoji() -> String {
+    "\u{1f5a5}\u{fe0f}".into()
+}
+fn default_ssh_fg() -> String {
+    "#abb2bf".into()
+}
+fn default_ssh_bg() -> String {
+    "#3e4452".into()
+}
+fn default_ssh_connected_fg() -> String {
+    "#282c34".into()
+}
+fn default_ssh_connected_bg() -> String {
+    "#98c379".into()
 }
 
 pub fn config_dir() -> PathBuf {
@@ -342,6 +380,7 @@ pub fn default_config() -> Config {
         },
         colors,
         apps,
+        ssh: vec![],
     }
 }
 
