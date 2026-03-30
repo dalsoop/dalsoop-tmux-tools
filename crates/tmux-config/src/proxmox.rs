@@ -63,7 +63,7 @@ pub struct Resources {
 pub struct DetailInfo {
     pub resources: Option<Resources>,
     pub docker: Vec<DockerContainer>,
-    pub ports: Vec<String>,
+    pub ports: Vec<PortInfo>,
     pub snapshots: Vec<Snapshot>,
 }
 
@@ -304,8 +304,47 @@ pub fn fetch_docker(server: &ProxmoxServer, vmid: u32) -> Vec<DockerContainer> {
         .collect()
 }
 
-pub fn fetch_ports(server: &ProxmoxServer, vmid: u32) -> Vec<String> {
-    if server.access == AccessType::Api { return Vec::new(); } // Port inspection requires SSH
+#[derive(Clone, Debug)]
+pub struct PortInfo {
+    pub addr: String,
+    pub port: u16,
+    pub process: String,
+    pub proto_guess: String, // http, https, ssh, ws, db, etc.
+}
+
+fn guess_protocol(port: u16, process: &str) -> String {
+    let p = process.to_lowercase();
+    // Process name hints
+    if p.contains("nginx") || p.contains("apache") || p.contains("caddy") || p.contains("traefik") {
+        if port == 443 || port == 8443 { return "https".into(); }
+        return "http".into();
+    }
+    if p.contains("sshd") { return "ssh".into(); }
+    if p.contains("postgres") { return "postgresql".into(); }
+    if p.contains("mysql") || p.contains("mariadbd") { return "mysql".into(); }
+    if p.contains("redis") { return "redis".into(); }
+    if p.contains("mongo") { return "mongodb".into(); }
+    // Port number hints
+    match port {
+        22 => "ssh".into(),
+        25 | 465 | 587 => "smtp".into(),
+        53 => "dns".into(),
+        80 | 8080 | 8000 | 3000 | 5000 => "http".into(),
+        443 | 8443 => "https".into(),
+        993 => "imaps".into(),
+        143 => "imap".into(),
+        3306 => "mysql".into(),
+        5432 => "postgresql".into(),
+        6379 => "redis".into(),
+        27017 => "mongodb".into(),
+        8006 => "proxmox".into(),
+        9090 | 9100 | 3100 | 9200 => "metrics".into(),
+        _ => "tcp".into(),
+    }
+}
+
+pub fn fetch_ports(server: &ProxmoxServer, vmid: u32) -> Vec<PortInfo> {
+    if server.access == AccessType::Api { return Vec::new(); }
     let cmd = format!(
         "pct exec {vmid} -- ss -tlnp 2>/dev/null | tail -n+2"
     );
@@ -316,10 +355,27 @@ pub fn fetch_ports(server: &ProxmoxServer, vmid: u32) -> Vec<String> {
 
     out.lines()
         .filter(|l| !l.is_empty())
-        .map(|l| {
-            // Extract Local Address:Port column (4th column)
+        .filter_map(|l| {
             let cols: Vec<&str> = l.split_whitespace().collect();
-            cols.get(3).unwrap_or(&"").to_string()
+            let local = cols.get(3)?;
+            // Extract process name from users:(("name",...))
+            let process = cols.get(5..)
+                .map(|rest| rest.join(" "))
+                .and_then(|s| {
+                    let start = s.find("((\"")? + 3;
+                    let end = s[start..].find('"')? + start;
+                    Some(s[start..end].to_string())
+                })
+                .unwrap_or_default();
+            // Parse addr:port
+            let (addr, port_str) = if let Some(idx) = local.rfind(':') {
+                (local[..idx].to_string(), &local[idx+1..])
+            } else {
+                (local.to_string(), "0")
+            };
+            let port: u16 = port_str.parse().unwrap_or(0);
+            let proto_guess = guess_protocol(port, &process);
+            Some(PortInfo { addr, port, process, proto_guess })
         })
         .collect()
 }
@@ -702,7 +758,7 @@ pub fn display_detail(info: &DetailInfo) -> Vec<Line<'static>> {
     }
     lines.push(Line::from(""));
 
-    // Docker
+    // Docker — each container with its individual ports
     lines.push(Line::from(Span::styled(
         format!("  🐳 Docker ({})", info.docker.len()), header
     )));
@@ -711,26 +767,54 @@ pub fn display_detail(info: &DetailInfo) -> Vec<Line<'static>> {
     } else {
         for d in &info.docker {
             let color = if d.status.starts_with("Up") { green } else { red };
+            // Container name + image + status
             lines.push(Line::from(vec![
                 Span::styled(format!("     {:<20}", d.name), color),
-                Span::styled(format!(" {:<20}", d.image), dim),
-                Span::styled(format!(" {}", d.ports), val),
+                Span::styled(format!(" {:<30}", d.image), dim),
+                Span::styled(d.status.clone(), val),
             ]));
+            // Individual port mappings
+            if !d.ports.is_empty() {
+                for port_entry in d.ports.split(", ") {
+                    let proto = if port_entry.contains("443") { "https" }
+                        else if port_entry.contains(":80") || port_entry.contains("->80") { "http" }
+                        else if port_entry.contains(":8080") || port_entry.contains("->8080") { "http" }
+                        else if port_entry.contains(":3000") || port_entry.contains("->3000") { "http" }
+                        else if port_entry.contains(":6379") { "redis" }
+                        else if port_entry.contains(":5432") { "postgresql" }
+                        else if port_entry.contains(":3306") { "mysql" }
+                        else if port_entry.contains(":27017") { "mongodb" }
+                        else { "tcp" };
+                    lines.push(Line::from(vec![
+                        Span::styled("       ↳ ", dim),
+                        Span::styled(port_entry.trim().to_string(), yellow),
+                        Span::styled(format!("  ({proto})"), dim),
+                    ]));
+                }
+            }
         }
     }
     lines.push(Line::from(""));
 
-    // Ports
+    // Listening Ports — with process + protocol
     lines.push(Line::from(Span::styled(
-        format!("  🔌 Ports ({})", info.ports.len()), header
+        format!("  🔌 Listening Ports ({})", info.ports.len()), header
     )));
     if info.ports.is_empty() {
         lines.push(Line::from(Span::styled("     (none)", dim)));
     } else {
         for p in &info.ports {
+            let proto_color = match p.proto_guess.as_str() {
+                "https" => green,
+                "http" => Style::default().fg(Color::Rgb(97, 175, 239)),
+                "ssh" => Style::default().fg(Color::Rgb(198, 120, 221)),
+                "mysql" | "postgresql" | "redis" | "mongodb" => yellow,
+                _ => val,
+            };
             lines.push(Line::from(vec![
-                Span::styled("     ", Style::default()),
-                Span::styled(p.clone(), yellow),
+                Span::styled(format!("     {:<25}", format!("{}:{}", p.addr, p.port)), val),
+                Span::styled(format!("{:<12}", p.proto_guess), proto_color),
+                Span::styled(p.process.clone(), dim),
             ]));
         }
     }
