@@ -22,6 +22,7 @@ pub const SEEDS: &[SeedApp] = &[
     SeedApp { emoji: "🤖", command: "claude",     description: "Claude Code",       fg: "#282c34", bg: "#61afef", brew: "",           apt: "",           npm: "@anthropic-ai/claude-code", go: "" },
     SeedApp { emoji: "🧠", command: "codex",      description: "OpenAI Codex CLI",  fg: "#282c34", bg: "#98c379", brew: "",           apt: "",           npm: "@openai/codex", go: "" },
     SeedApp { emoji: "💎", command: "gemini",     description: "Gemini CLI",        fg: "#282c34", bg: "#e5c07b", brew: "",           apt: "",           npm: "@google/gemini-cli", go: "" },
+    SeedApp { emoji: "🐙", command: "gh",          description: "GitHub CLI",        fg: "#282c34", bg: "#5c6370", brew: "gh",         apt: "",           npm: "", go: "" },
     SeedApp { emoji: "🔍", command: "btop",       description: "Resource monitor",  fg: "#282c34", bg: "#c678dd", brew: "btop",       apt: "btop",       npm: "", go: "" },
     SeedApp { emoji: "📡", command: "bandwhich",  description: "Network monitor",   fg: "#282c34", bg: "#56b6c2", brew: "bandwhich",  apt: "",           npm: "", go: "" },
     SeedApp { emoji: "🌐", command: "opencode",   description: "OpenCode CLI",      fg: "#282c34", bg: "#98c379", brew: "",           apt: "",           npm: "", go: "github.com/opencode-ai/opencode@latest" },
@@ -151,6 +152,25 @@ pub fn install_method(seed: &SeedApp) -> &'static str {
 /// Build a remote install script that handles dependencies.
 /// Returns a shell script string to run on the remote host.
 pub fn remote_install_script(seed: &SeedApp) -> Option<String> {
+    // gh CLI — needs special repo setup on Linux
+    if seed.command == "gh" {
+        return Some(r#"set -e
+if command -v gh >/dev/null 2>&1; then echo "[✓] gh already installed"; exit 0; fi
+echo "[+] Installing GitHub CLI..."
+if command -v brew >/dev/null 2>&1; then
+  brew install gh
+elif command -v apt-get >/dev/null 2>&1; then
+  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+  chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+  apt-get update -qq && apt-get install -y gh
+else
+  echo "[✗] No supported package manager"; exit 1
+fi
+echo "[✓] gh installed"
+"#.to_string());
+    }
+
     // npm-based apps (claude, codex, gemini)
     if !seed.npm.is_empty() {
         return Some(format!(
