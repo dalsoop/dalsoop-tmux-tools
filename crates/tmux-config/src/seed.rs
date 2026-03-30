@@ -36,6 +36,17 @@ pub enum PkgManager {
     Go,
 }
 
+/// Install Homebrew if on macOS and not installed.
+pub fn ensure_brew() -> bool {
+    if is_installed("brew") { return true; }
+    if std::env::consts::OS != "macos" { return false; }
+    Command::new("sh")
+        .args(["-c", "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 /// Return all available package managers on this system.
 pub fn available_managers() -> Vec<PkgManager> {
     let mut mgrs = Vec::new();
@@ -80,7 +91,13 @@ pub fn is_installed(command: &str) -> bool {
 }
 
 /// Install a seed app. Returns true on success.
+/// On macOS, installs Homebrew first if needed.
 pub fn install(seed: &SeedApp) -> bool {
+    // If brew is the only option and not installed, try installing it first
+    if !seed.brew.is_empty() && !is_installed("brew") && std::env::consts::OS == "macos" {
+        ensure_brew();
+    }
+
     let cmd = match install_cmd(seed) {
         Some(c) => c,
         None => return false,
