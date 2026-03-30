@@ -2,6 +2,7 @@ use anyhow::Result;
 use tmux_fmt::tmux;
 use tmux_fmt::tmux::sanitize as sanitize_tmux;
 
+const CONFIRM_FILE: &str = "/tmp/tmux-pending-confirm.conf";
 
 pub fn run(range: &str) -> Result<()> {
     if range == "window" {
@@ -30,14 +31,21 @@ fn kill_session(sess: &str) -> Result<()> {
     let current = tmux::query_or(&["display-message", "-p", "#S"], "");
     let safe = sanitize_tmux(sess);
 
-    if current == sess {
-        // Switch away before killing — try last session, then next
-        if tmux::run(&["switch-client", "-l"]).is_err() {
-            tmux::run(&["switch-client", "-n"])?;
-        }
-    }
+    // Use run-shell to execute switch+kill as a shell command,
+    // so confirm-before can handle the full sequence
+    let kill_cmd = if current == sess {
+        format!(
+            "run-shell 'tmux switch-client -l 2>/dev/null || tmux switch-client -n; tmux kill-session -t ={safe}'"
+        )
+    } else {
+        format!("kill-session -t ={safe}")
+    };
 
-    tmux::run(&["kill-session", "-t", &format!("={safe}")])?;
+    let content = format!(
+        "confirm-before -p \"kill session '{}'? (y/n)\" \"{}\"",
+        safe, kill_cmd,
+    );
+    std::fs::write(CONFIRM_FILE, content)?;
 
     Ok(())
 }
