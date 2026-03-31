@@ -85,6 +85,64 @@ pub fn get_servers(config: &Config) -> Vec<ProxmoxServer> {
         .collect()
 }
 
+// ── SSH host key ──
+
+/// Check if `host` has an entry in known_hosts.
+pub fn host_key_exists(host: &str) -> bool {
+    Command::new("ssh-keygen")
+        .args(["-F", host])
+        .output()
+        .map(|o| o.status.success() && !o.stdout.is_empty())
+        .unwrap_or(false)
+}
+
+/// Run `ssh-keyscan` and append the result to known_hosts.
+/// Returns true on success.
+pub fn register_host_key(host: &str) -> bool {
+    let output = Command::new("ssh-keyscan")
+        .args(["-H", host])
+        .output();
+    match output {
+        Ok(o) if !o.stdout.is_empty() => {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+            let known_hosts = std::path::PathBuf::from(home).join(".ssh/known_hosts");
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&known_hosts)
+                .and_then(|mut f| {
+                    use std::io::Write;
+                    f.write_all(&o.stdout)
+                })
+                .is_ok()
+        }
+        _ => false,
+    }
+}
+
+/// Ask the user whether to register the host key, then do it.
+/// Returns true if the key was registered (or already existed).
+pub fn ensure_host_key(host: &str) -> bool {
+    if host_key_exists(host) {
+        return true;
+    }
+    eprint!("Host key not found for '{host}'. Register it now? [y/N] ");
+    let mut input = String::new();
+    if std::io::stdin().read_line(&mut input).is_err() {
+        return false;
+    }
+    if !input.trim().eq_ignore_ascii_case("y") {
+        return false;
+    }
+    if register_host_key(host) {
+        eprintln!("✓ Host key registered for '{host}'");
+        true
+    } else {
+        eprintln!("✗ Failed to register host key for '{host}'");
+        false
+    }
+}
+
 // ── SSH commands ──
 
 fn ssh_run(user: &str, host: &str, cmd: &str) -> Option<String> {
@@ -96,10 +154,25 @@ fn ssh_run(user: &str, host: &str, cmd: &str) -> Option<String> {
         .output()
         .ok()?;
     if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        None
+        return Some(String::from_utf8_lossy(&output.stdout).to_string());
     }
+    // Detect host key verification failure and offer to fix it
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("Host key verification failed") {
+        if ensure_host_key(host) {
+            // Retry after registering the key
+            let output = Command::new("ssh")
+                .args(SSH_OPTS)
+                .arg(&target)
+                .arg(cmd)
+                .output()
+                .ok()?;
+            if output.status.success() {
+                return Some(String::from_utf8_lossy(&output.stdout).to_string());
+            }
+        }
+    }
+    None
 }
 
 // ── API helpers ──
