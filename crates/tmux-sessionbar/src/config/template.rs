@@ -58,6 +58,8 @@ pub struct Config {
     #[serde(default)]
     pub keybindings: KeybindingsConfig,
     #[serde(default)]
+    pub pane_border: PaneBorderConfig,
+    #[serde(default)]
     pub maintenance: MaintenanceConfig,
     #[serde(default = "default_plugins")]
     pub plugins: Vec<PluginEntry>,
@@ -187,6 +189,32 @@ impl Default for KeybindingsConfig {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PaneBorderConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_pane_border_active_fg")]
+    pub active_fg: String,
+    #[serde(default = "default_pane_border_active_bg")]
+    pub active_bg: String,
+    #[serde(default = "default_pane_border_inactive_fg")]
+    pub inactive_fg: String,
+    #[serde(default = "default_pane_border_inactive_bg")]
+    pub inactive_bg: String,
+}
+
+impl Default for PaneBorderConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            active_fg: default_pane_border_active_fg(),
+            active_bg: default_pane_border_active_bg(),
+            inactive_fg: default_pane_border_inactive_fg(),
+            inactive_bg: default_pane_border_inactive_bg(),
+        }
+    }
+}
+
 impl Default for SimpleBlock {
     fn default() -> Self {
         Self {
@@ -266,6 +294,19 @@ fn default_mem_warn() -> String {
 }
 fn default_mem_critical() -> String {
     "#e06c75".into()
+}
+
+fn default_pane_border_active_fg() -> String {
+    "#282c34".into()
+}
+fn default_pane_border_active_bg() -> String {
+    "#98c379".into()
+}
+fn default_pane_border_inactive_fg() -> String {
+    "#5c6370".into()
+}
+fn default_pane_border_inactive_bg() -> String {
+    "#282c34".into()
 }
 
 fn default_plugins() -> Vec<PluginEntry> {
@@ -368,6 +409,7 @@ pub fn default_config() -> Config {
         },
         theme: ThemeConfig::default(),
         keybindings: KeybindingsConfig::default(),
+        pane_border: PaneBorderConfig::default(),
         maintenance: MaintenanceConfig::default(),
         plugins: default_plugins(),
     }
