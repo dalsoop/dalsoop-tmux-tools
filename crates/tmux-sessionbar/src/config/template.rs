@@ -303,10 +303,10 @@ fn default_pane_border_active_bg() -> String {
     "#98c379".into()
 }
 fn default_pane_border_inactive_fg() -> String {
-    "#5c6370".into()
+    "#abb2bf".into()
 }
 fn default_pane_border_inactive_bg() -> String {
-    "#282c34".into()
+    "#3e4452".into()
 }
 
 fn default_plugins() -> Vec<PluginEntry> {
