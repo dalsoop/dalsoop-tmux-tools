@@ -63,6 +63,8 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
             let host = args[2].clone();
             let user = args.get(3).filter(|s| !s.is_empty()).cloned();
             let entry_type = args.get(4).cloned().unwrap_or_else(|| "ssh".into());
+            // Ensure host key is in known_hosts before adding
+            proxmox::ensure_host_key(&host);
             config.ssh.push(tmux_windowbar::config::template::SshEntry {
                 name: name.clone(), host, user,
                 emoji: "\u{1f5a5}\u{fe0f}".into(),
@@ -237,6 +239,11 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
                 let user = e.user.as_deref().unwrap_or("root");
                 let target = format!("{user}@{}", e.host);
                 let session_name = format!("ssh-{}", e.name);
+
+                // Ensure host key before connecting
+                if !proxmox::host_key_exists(&e.host) {
+                    proxmox::ensure_host_key(&e.host);
+                }
 
                 // Check connectivity first
                 let reachable = std::process::Command::new("ssh")

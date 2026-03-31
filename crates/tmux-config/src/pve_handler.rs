@@ -15,7 +15,15 @@ impl App {
                 self.pve_depth = 1;
                 self.sync_pve_list();
                 if self.pve_containers.is_empty() {
-                    self.status_msg = Some("No containers found or unreachable".into());
+                    let server = &self.pve_servers[idx];
+                    if !proxmox::host_key_exists(&server.host) {
+                        self.status_msg = Some(format!(
+                            "Host key missing for '{}'. Run: ssh-keyscan -H {} >> ~/.ssh/known_hosts",
+                            server.host, server.host
+                        ));
+                    } else {
+                        self.status_msg = Some("No containers found or unreachable".into());
+                    }
                 } else {
                     self.status_msg = Some(format!("{} containers", self.pve_containers.len()));
                 }
