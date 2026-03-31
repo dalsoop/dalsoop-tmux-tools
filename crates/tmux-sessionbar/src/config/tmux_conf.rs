@@ -68,6 +68,38 @@ pub fn generate(config: &Config, _binary_path: &str) -> String {
     ));
     out.push('\n');
 
+    // Pane border
+    if config.pane_border.enabled {
+        out.push_str("# --- Pane border ---\n");
+        out.push_str("set -g pane-border-status top\n");
+        let pb = &config.pane_border;
+        // Active pane: bold with index + command + directory
+        // Inactive pane: dim with index + command
+        let home = std::env::var("HOME").expect("HOME environment variable must be set");
+        // Use separate #{?} blocks to avoid commas inside #[style] being parsed as conditional separators
+        let pane_id = "#{session_name}:#{window_index}.#{pane_index} #{pane_current_command}";
+        let format = format!(
+            "\
+             #{{?pane_active,#[fg={abg} bold] {pane_id} #[fg={ifg} nobold]#{{s|{home}|~|:pane_current_path}} (#{{{pid}}})#[default],\
+             #[fg={ifg}] {pane_id} #[default]\
+             }}",
+            pid = "pane_pid",
+            abg = pb.active_bg,
+            ifg = pb.inactive_fg,
+            home = home,
+        );
+        out.push_str(&format!("set -g pane-border-format \"{format}\"\n"));
+        out.push_str(&format!(
+            "set -g pane-active-border-style \"fg={}\"\n",
+            pb.active_bg
+        ));
+        out.push_str(&format!(
+            "set -g pane-border-style \"fg={}\"\n",
+            pb.inactive_fg
+        ));
+        out.push('\n');
+    }
+
     // Keybindings
     if config.keybindings.session_switch {
         out.push_str("# --- Session switching ---\n");
