@@ -40,14 +40,14 @@ pub fn apply_settings() -> Result<()> {
         "bind",
         "-Troot",
         "MouseDown1Status",
-        "run-shell '$HOME/.config/tmux-sessionbar/bin/tmux-windowbar click \"#{mouse_status_range}\" 2>/dev/null || $HOME/.config/tmux-sessionbar/bin/tmux-sessionbar click \"#{mouse_status_range}\" 2>/dev/null'",
+        "run-shell 'TMUX_CLIENT=\"#{client_tty}\" $HOME/.config/tmux-sessionbar/bin/tmux-windowbar click \"#{mouse_status_range}\" 2>/dev/null || TMUX_CLIENT=\"#{client_tty}\" $HOME/.config/tmux-sessionbar/bin/tmux-sessionbar click \"#{mouse_status_range}\" 2>/dev/null'",
     ])?;
 
     tmux::run(&[
         "bind",
         "-Troot",
         "DoubleClick1Status",
-        "run-shell '$HOME/.config/tmux-sessionbar/bin/tmux-windowbar dblclick \"#{mouse_status_range}\" 2>/dev/null'",
+        "run-shell 'TMUX_CLIENT=\"#{client_tty}\" $HOME/.config/tmux-sessionbar/bin/tmux-windowbar dblclick \"#{mouse_status_range}\" 2>/dev/null'",
     ])?;
 
     // Trigger sessionbar re-render

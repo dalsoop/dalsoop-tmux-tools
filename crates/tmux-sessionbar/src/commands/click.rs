@@ -15,11 +15,11 @@ pub fn run(range: &str) -> Result<()> {
     } else if let Some(idx_str) = range.strip_prefix("_s") {
         // Switch by index — resolve to session name
         if let Some(name) = resolve_session_by_index(idx_str) {
-            tmux::run(&["switch-client", "-t", &format!("={name}")])?;
+            tmux::switch_client(&format!("={name}"))?;
         }
     } else {
         // Fallback: treat range as session name (for backward compat)
-        tmux::run(&["switch-client", "-t", &format!("={range}")])?;
+        tmux::switch_client(&format!("={range}"))?;
     }
 
     Ok(())
@@ -52,10 +52,13 @@ fn kill_session(sess: &str) -> Result<()> {
     let safe = sanitize_tmux(sess);
 
     if current == sess {
-        let cmd = format!(
-            "run-shell 'tmux switch-client -l 2>/dev/null || tmux switch-client -n; tmux kill-session -t ={safe}'"
-        );
-        tmux::confirm_raw(&format!("kill session '{safe}'?"), &cmd)?;
+        let switch_cmd = if let Ok(client) = std::env::var("TMUX_CLIENT") {
+            let client = tmux::sanitize(&client);
+            format!("run-shell 'tmux switch-client -c {client} -l 2>/dev/null || tmux switch-client -c {client} -n; tmux kill-session -t ={safe}'")
+        } else {
+            format!("run-shell 'tmux switch-client -l 2>/dev/null || tmux switch-client -n; tmux kill-session -t ={safe}'")
+        };
+        tmux::confirm_raw(&format!("kill session '{safe}'?"), &switch_cmd)?;
     } else {
         tmux::confirm(&format!("kill session '{safe}'?"), &format!("kill-session -t ={safe}"))?;
     }
