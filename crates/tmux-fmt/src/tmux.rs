@@ -191,9 +191,17 @@ pub fn confirm_raw(title: &str, cmd: &str) -> Result<()> {
 }
 
 /// Run a tmux command-prompt, targeting `TMUX_CLIENT` if available.
+///
+/// `cmd_str` must start with `command-prompt`; when `TMUX_CLIENT` is set,
+/// `-t <client>` is inserted after `command-prompt` so the prompt appears
+/// on the correct client.
 pub fn command_prompt(cmd_str: &str) -> Result<()> {
     let full = if let Some(client) = client_target() {
-        format!("tmux -t {client} {cmd_str}")
+        if let Some(rest) = cmd_str.strip_prefix("command-prompt") {
+            format!("tmux command-prompt -t '{client}'{rest}")
+        } else {
+            format!("tmux {cmd_str}")
+        }
     } else {
         format!("tmux {cmd_str}")
     };
