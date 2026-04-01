@@ -131,35 +131,87 @@ pub fn home_dir() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/root".into()))
 }
 
+// ── Client targeting ──
+
+/// Read `TMUX_CLIENT` env var to get the target client TTY.
+///
+/// When a click handler is invoked via `run-shell`, the spawned process
+/// loses the tmux client context. The binding passes `#{client_tty}` as
+/// `TMUX_CLIENT` so that client-dependent commands (switch-client,
+/// confirm-before, command-prompt) can target the correct client.
+fn client_target() -> Option<String> {
+    std::env::var("TMUX_CLIENT")
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
+/// Switch the current client to `target_session`.
+///
+/// If `TMUX_CLIENT` is set, passes `-c <client>` so the command works
+/// inside `run-shell` where no implicit client exists.
+pub fn switch_client(target_session: &str) -> Result<()> {
+    if let Some(client) = client_target() {
+        run(&["switch-client", "-c", &client, "-t", target_session])
+    } else {
+        run(&["switch-client", "-t", target_session])
+    }
+}
+
 // ── Confirm dialog ──
 
 /// Show a confirm-before prompt via tmux.
 ///
 /// When the user answers "y", tmux executes `cmd`.
 /// Both `title` and `cmd` are sanitized before embedding.
+/// If `TMUX_CLIENT` is set, targets that client.
 pub fn confirm(title: &str, cmd: &str) -> Result<()> {
     let safe_title = sanitize(title);
     let safe_cmd = sanitize(cmd);
-    run(&[
-        "confirm-before",
-        "-p",
-        &format!("{safe_title} (y/n)"),
-        &safe_cmd,
-    ])
+    let prompt = format!("{safe_title} (y/n)");
+    if let Some(client) = client_target() {
+        run(&["confirm-before", "-t", &client, "-p", &prompt, &safe_cmd])
+    } else {
+        run(&["confirm-before", "-p", &prompt, &safe_cmd])
+    }
 }
 
 /// Show a confirm-before prompt with a raw (pre-built) command string.
 ///
 /// Use this when `cmd` contains tmux sub-commands (e.g. `run-shell '...'`)
 /// that should not be sanitized. `title` is still sanitized.
+/// If `TMUX_CLIENT` is set, targets that client.
 pub fn confirm_raw(title: &str, cmd: &str) -> Result<()> {
     let safe_title = sanitize(title);
-    run(&[
-        "confirm-before",
-        "-p",
-        &format!("{safe_title} (y/n)"),
-        cmd,
-    ])
+    let prompt = format!("{safe_title} (y/n)");
+    if let Some(client) = client_target() {
+        run(&["confirm-before", "-t", &client, "-p", &prompt, cmd])
+    } else {
+        run(&["confirm-before", "-p", &prompt, cmd])
+    }
+}
+
+/// Run a tmux command-prompt, targeting `TMUX_CLIENT` if available.
+///
+/// `cmd_str` must start with `command-prompt`; when `TMUX_CLIENT` is set,
+/// `-t <client>` is inserted after `command-prompt` so the prompt appears
+/// on the correct client.
+pub fn command_prompt(cmd_str: &str) -> Result<()> {
+    let full = if let Some(client) = client_target() {
+        if let Some(rest) = cmd_str.strip_prefix("command-prompt") {
+            format!("tmux command-prompt -t '{client}'{rest}")
+        } else {
+            format!("tmux {cmd_str}")
+        }
+    } else {
+        format!("tmux {cmd_str}")
+    };
+    let status = Command::new("sh")
+        .args(["-c", &full])
+        .status()?;
+    if !status.success() {
+        anyhow::bail!("tmux command failed: {cmd_str}");
+    }
+    Ok(())
 }
 
 // ── Sanitization ──

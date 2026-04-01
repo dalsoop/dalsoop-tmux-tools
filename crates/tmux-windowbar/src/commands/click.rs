@@ -28,14 +28,14 @@ pub fn run(range: &str) -> Result<()> {
 
                 let has = tmux::run(&["has-session", "-t", &format!("={session_name}")]).is_ok();
                 if has {
-                    tmux::run(&["switch-client", "-t", &format!("={session_name}")])?;
+                    tmux::switch_client(&format!("={session_name}"))?;
                 } else {
                     // Auto-reconnecting SSH session
                     let ssh_cmd = format!(
                         "while true; do ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 {ssh_target}; RC=$?; if [ $RC -eq 0 ]; then break; fi; echo '[연결 끊김 - 5초 후 재접속]'; sleep 5; done"
                     );
                     tmux::run(&["new-session", "-d", "-s", &session_name, &ssh_cmd])?;
-                    tmux::run(&["switch-client", "-t", &format!("={session_name}")])?;
+                    tmux::switch_client(&format!("={session_name}"))?;
                 }
                 let _ = std::process::Command::new("tmux-sessionbar")
                     .args(["render-status", "left"])
@@ -48,10 +48,10 @@ pub fn run(range: &str) -> Result<()> {
         let has = tmux::run(&["has-session", "-t", &format!("={user}")]).is_ok();
 
         if has {
-            tmux::run(&["switch-client", "-t", &format!("={user}")])?;
+            tmux::switch_client(&format!("={user}"))?;
         } else {
             tmux::run(&["new-session", "-d", "-s", user, &format!("sudo -iu {user}")])?;
-            tmux::run(&["switch-client", "-t", &format!("={user}")])?;
+            tmux::switch_client(&format!("={user}"))?;
         }
         let _ = std::process::Command::new("tmux-sessionbar")
             .args(["render-status", "left"])
@@ -68,7 +68,7 @@ pub fn run(range: &str) -> Result<()> {
         tmux::run(&["select-window", "-t", &format!(":{idx}")])?;
     } else if let Some(target) = range.strip_prefix("_wa") {
         if let Some((sess, win)) = target.split_once('.') {
-            tmux::run(&["switch-client", "-t", &format!("={sess}:{win}")])?;
+            tmux::switch_client(&format!("={sess}:{win}"))?;
         }
     } else if let Some(target) = range.strip_prefix("_wx") {
         if let Some((sess, win)) = target.split_once('.') {
@@ -86,7 +86,7 @@ pub fn run(range: &str) -> Result<()> {
         let parts: Vec<&str> = target.splitn(3, '.').collect();
         if parts.len() == 3 {
             let (sess, win, pane) = (parts[0], parts[1], parts[2]);
-            tmux::run(&["switch-client", "-t", &format!("={sess}:{win}")])?;
+            tmux::switch_client(&format!("={sess}:{win}"))?;
             tmux::run(&["select-pane", "-t", &format!("={sess}:{win}.{pane}")])?;
         }
     } else {
@@ -102,17 +102,17 @@ pub fn run_dblclick(range: &str) -> Result<()> {
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-'))
         && !range.starts_with('_')
     {
-        tmux_prompt(&format!(
+        tmux::command_prompt(&format!(
             "command-prompt -I \"{range}\" -p \"rename session:\" \"rename-session '%%'\""
         ))?;
     } else if let Some(idx) = range.strip_prefix("_ws") {
-        tmux_prompt(&format!(
+        tmux::command_prompt(&format!(
             "command-prompt -p \"rename window {idx}:\" \"rename-window -t :{idx} '%%'\""
         ))?;
     } else if let Some(target) = range.strip_prefix("_wa")
         && let Some((sess, win)) = target.split_once('.')
     {
-        tmux_prompt(&format!(
+        tmux::command_prompt(&format!(
             "command-prompt -p \"rename window {sess}:{win}:\" \"rename-window -t ={sess}:{win} '%%'\""
         ))?;
     }
@@ -145,26 +145,10 @@ fn switch_to_existing_app(command: &str) -> Result<bool> {
     for line in &windows {
         let parts: Vec<&str> = line.splitn(3, ':').collect();
         if parts.len() == 3 && parts[2] == command {
-            tmux::run(&[
-                "switch-client",
-                "-t",
-                &format!("={}:{}", parts[0], parts[1]),
-            ])?;
+            tmux::switch_client(&format!("={}:{}", parts[0], parts[1]))?;
             return Ok(true);
         }
     }
     Ok(false)
 }
 
-/// Execute a tmux command string directly (e.g. command-prompt).
-fn tmux_prompt(cmd: &str) -> Result<()> {
-    // Parse the command string into args for tmux
-    // The command is a single tmux command like "command-prompt -I ..."
-    let status = std::process::Command::new("sh")
-        .args(["-c", &format!("tmux {cmd}")])
-        .status()?;
-    if !status.success() {
-        anyhow::bail!("tmux command failed: {cmd}");
-    }
-    Ok(())
-}
