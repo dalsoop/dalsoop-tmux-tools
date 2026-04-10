@@ -119,7 +119,8 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
         "app-list" => {
             let config = load_config()?;
             for a in &config.apps {
-                println!("{} {:<20} [{}]", a.emoji, a.command, a.mode);
+                let mode_str = a.mode.as_deref().unwrap_or("기본");
+                println!("{} {:<20} [{}]", a.emoji, a.command, mode_str);
             }
             Ok(())
         }
@@ -131,7 +132,7 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
             let emoji = args.get(2).cloned().unwrap_or_else(|| "🔧".into());
             config.apps.push(tmux_windowbar::config::template::AppEntry {
                 emoji, command: command.clone(),
-                fg: "#282c34".into(), bg: "#61afef".into(), mode: "window".into(),
+                fg: "#282c34".into(), bg: "#61afef".into(), mode: None,
             });
             save_and_apply(&config)?;
             println!("Added '{command}'");

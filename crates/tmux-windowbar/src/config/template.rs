@@ -6,6 +6,7 @@ use tmux_fmt::tmux;
 
 pub const CONFIG_DIR: &str = ".config/tmux-windowbar";
 pub const CONFIG_FILE: &str = "config.toml";
+pub const APPS_D_DIR: &str = "apps.d";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ColorEntry {
@@ -21,8 +22,17 @@ pub struct AppEntry {
     pub fg: String,
     #[serde(default = "default_app_bg")]
     pub bg: String,
-    #[serde(default = "default_app_mode")]
-    pub mode: String, // "window" or "pane"
+    /// "window" or "pane". 비어 있으면 `WindowConfig::default_app_mode` 를 따름.
+    /// `effective_mode()` 로 조회 권장.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+}
+
+impl AppEntry {
+    /// 실제 적용될 mode — `mode` 명시값 또는 `WindowConfig::default_app_mode` fallback.
+    pub fn effective_mode<'a>(&'a self, window: &'a WindowConfig) -> &'a str {
+        self.mode.as_deref().unwrap_or(window.default_app_mode.as_str())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -59,10 +69,29 @@ pub struct Config {
     pub theme: ThemeConfig,
     #[serde(default)]
     pub colors: HashMap<String, ColorEntry>,
+    /// `config.toml` 안의 인라인 `[[apps]]` 항목. apply 시 다시 직렬화됨.
     #[serde(default)]
     pub apps: Vec<AppEntry>,
+    /// `apps.d/*.toml` 모듈에서 로드된 항목. 직렬화/저장 안 됨 (read-only).
+    #[serde(skip)]
+    pub modular_apps: Vec<AppEntry>,
     #[serde(default)]
     pub ssh: Vec<SshEntry>,
+}
+
+impl Config {
+    /// 인라인 + 모듈식 apps 를 합친 iterator. render/click 등 사용자에게 노출되는
+    /// 모든 앱 순회는 이 함수를 사용해야 한다 (인덱스 일관성 보장).
+    pub fn all_apps(&self) -> impl Iterator<Item = &AppEntry> {
+        self.apps.iter().chain(self.modular_apps.iter())
+    }
+}
+
+/// `apps.d/*.toml` 한 파일의 형식.
+#[derive(Debug, Deserialize, Default)]
+struct AppsModule {
+    #[serde(default)]
+    apps: Vec<AppEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -166,7 +195,7 @@ fn default_app_bg() -> String {
     "#61afef".into()
 }
 fn default_app_mode() -> String {
-    "window".into()
+    "pane".into()
 }
 fn default_users_label() -> String {
     "#56b6c2".into()
@@ -214,6 +243,43 @@ pub fn config_dir() -> PathBuf {
 
 pub fn config_path() -> PathBuf {
     config_dir().join(CONFIG_FILE)
+}
+
+/// `apps.d/` 디렉토리. 여기 있는 모든 `*.toml` 파일이 모듈식 앱으로 로드됨.
+pub fn apps_d_path() -> PathBuf {
+    config_dir().join(APPS_D_DIR)
+}
+
+/// 디렉토리에서 `*.toml` 파일을 알파벳 순으로 읽어 `AppEntry` 들을 모은다.
+/// 파싱 실패는 stderr 경고만 출력하고 무시 — 한 모듈이 깨져도 나머지 살아남아야 함.
+pub fn load_modular_apps(dir: &std::path::Path) -> Vec<AppEntry> {
+    let mut entries: Vec<PathBuf> = match std::fs::read_dir(dir) {
+        Ok(rd) => rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("toml"))
+            .collect(),
+        Err(_) => return Vec::new(),
+    };
+    entries.sort();
+
+    let mut apps = Vec::new();
+    for path in entries {
+        match std::fs::read_to_string(&path) {
+            Ok(content) => match toml::from_str::<AppsModule>(&content) {
+                Ok(module) => apps.extend(module.apps),
+                Err(e) => eprintln!(
+                    "[tmux-windowbar] {} 파싱 실패 (스킵): {e}",
+                    path.display()
+                ),
+            },
+            Err(e) => eprintln!(
+                "[tmux-windowbar] {} 읽기 실패 (스킵): {e}",
+                path.display()
+            ),
+        }
+    }
+    apps
 }
 
 impl Default for Config {
@@ -308,28 +374,28 @@ pub fn default_config() -> Config {
             command: "htop".into(),
             fg: "#282c34".into(),
             bg: "#d19a66".into(),
-            mode: "window".into(),
+            mode: None,
         },
         AppEntry {
             emoji: "📂".into(),
             command: "lazygit".into(),
             fg: "#282c34".into(),
             bg: "#e06c75".into(),
-            mode: "window".into(),
+            mode: None,
         },
         AppEntry {
             emoji: "🐳".into(),
             command: "lazydocker".into(),
             fg: "#282c34".into(),
             bg: "#61afef".into(),
-            mode: "window".into(),
+            mode: None,
         },
         AppEntry {
             emoji: "🖥️".into(),
             command: "bash".into(),
             fg: "#282c34".into(),
             bg: "#5c6370".into(),
-            mode: "window".into(),
+            mode: None,
         },
     ];
 
@@ -354,12 +420,15 @@ pub fn default_config() -> Config {
         },
         colors,
         apps,
+        modular_apps: Vec::new(),
         ssh: vec![],
     }
 }
 
 pub fn load_config() -> anyhow::Result<Config> {
-    tmux::load_toml_config(&config_path(), default_config)
+    let mut config: Config = tmux::load_toml_config(&config_path(), default_config)?;
+    config.modular_apps = load_modular_apps(&apps_d_path());
+    Ok(config)
 }
 
 #[cfg(test)]
@@ -382,8 +451,121 @@ mod tests {
     }
 
     #[test]
-    fn default_app_mode_is_window() {
+    fn default_app_mode_is_pane() {
         let config = default_config();
-        assert_eq!(config.window.default_app_mode, "window");
+        assert_eq!(config.window.default_app_mode, "pane");
+    }
+
+    #[test]
+    fn default_apps_have_no_explicit_mode() {
+        // 기본 앱들은 mode = None 으로 두어 글로벌 default_app_mode 를 따라야 함
+        let config = default_config();
+        for app in &config.apps {
+            assert!(
+                app.mode.is_none(),
+                "default app '{}' should not pin its mode",
+                app.command
+            );
+        }
+    }
+
+    #[test]
+    fn effective_mode_falls_back_to_window_default() {
+        let config = default_config();
+        let app = &config.apps[0];
+        assert_eq!(app.effective_mode(&config.window), "pane");
+    }
+
+    #[test]
+    fn effective_mode_uses_explicit_value_when_set() {
+        let config = default_config();
+        let app = AppEntry {
+            emoji: "X".into(),
+            command: "x".into(),
+            fg: "#000".into(),
+            bg: "#fff".into(),
+            mode: Some("window".into()),
+        };
+        assert_eq!(app.effective_mode(&config.window), "window");
+    }
+
+    #[test]
+    fn all_apps_chains_inline_then_modular() {
+        let mut config = default_config();
+        let inline_count = config.apps.len();
+        config.modular_apps.push(AppEntry {
+            emoji: "🏭".into(),
+            command: "modular-1".into(),
+            fg: "#000".into(),
+            bg: "#fff".into(),
+            mode: None,
+        });
+        config.modular_apps.push(AppEntry {
+            emoji: "🏭".into(),
+            command: "modular-2".into(),
+            fg: "#000".into(),
+            bg: "#fff".into(),
+            mode: None,
+        });
+        let all: Vec<_> = config.all_apps().collect();
+        assert_eq!(all.len(), inline_count + 2);
+        // 인라인이 먼저, 모듈이 그 다음
+        assert_eq!(all[inline_count].command, "modular-1");
+        assert_eq!(all[inline_count + 1].command, "modular-2");
+    }
+
+    #[test]
+    fn load_modular_apps_returns_empty_when_dir_missing() {
+        let path = std::path::Path::new("/tmp/tmux-windowbar-test-no-such-dir-xyz");
+        let _ = std::fs::remove_dir_all(path);
+        let apps = load_modular_apps(path);
+        assert!(apps.is_empty());
+    }
+
+    #[test]
+    fn load_modular_apps_reads_alphabetic_order() {
+        let dir = std::env::temp_dir().join("tmux-windowbar-test-apps-d");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("20-second.toml"),
+            "[[apps]]\nemoji = \"B\"\ncommand = \"second\"\n",
+        ).unwrap();
+        std::fs::write(
+            dir.join("10-first.toml"),
+            "[[apps]]\nemoji = \"A\"\ncommand = \"first\"\n",
+        ).unwrap();
+        // 비-toml 파일은 무시
+        std::fs::write(dir.join("README.md"), "ignored").unwrap();
+
+        let apps = load_modular_apps(&dir);
+        assert_eq!(apps.len(), 2);
+        assert_eq!(apps[0].command, "first");
+        assert_eq!(apps[1].command, "second");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_modular_apps_skips_broken_files_quietly() {
+        let dir = std::env::temp_dir().join("tmux-windowbar-test-apps-d-broken");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("00-good.toml"),
+            "[[apps]]\nemoji = \"A\"\ncommand = \"alive\"\n",
+        ).unwrap();
+        std::fs::write(dir.join("10-broken.toml"), "this is not valid toml = ===").unwrap();
+        std::fs::write(
+            dir.join("20-also-good.toml"),
+            "[[apps]]\nemoji = \"C\"\ncommand = \"survivor\"\n",
+        ).unwrap();
+
+        let apps = load_modular_apps(&dir);
+        assert_eq!(apps.len(), 2, "broken file should be skipped, others survive");
+        assert_eq!(apps[0].command, "alive");
+        assert_eq!(apps[1].command, "survivor");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

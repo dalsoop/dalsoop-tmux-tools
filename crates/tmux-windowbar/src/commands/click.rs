@@ -7,8 +7,10 @@ pub fn run(range: &str) -> Result<()> {
     if let Some(idx_str) = range.strip_prefix("_app") {
         if let Ok(idx) = idx_str.parse::<usize>() {
             let config = load_config()?;
-            if let Some(app) = config.apps.get(idx) {
-                if app.mode == "pane" {
+            // all_apps() — 인라인 + 모듈식 합친 순서. render.rs 의 인덱스와 일치해야 함.
+            let app = config.all_apps().nth(idx).cloned();
+            if let Some(app) = app {
+                if app.effective_mode(&config.window) == "pane" {
                     tmux::run(&["split-window", "-h", &app.command])?;
                 } else if !switch_to_existing_app(&app.command)? {
                     tmux::run(&["new-window", "-n", &app.command, &app.command])?;

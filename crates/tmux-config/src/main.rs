@@ -323,7 +323,8 @@ impl App {
                 command: s.command.into(),
                 fg: s.fg.into(),
                 bg: s.bg.into(),
-                mode: self.config.window.default_app_mode.clone(),
+                // mode = None — 글로벌 default_app_mode 따름. 특정 mode 강제 시에만 명시.
+                mode: None,
             });
             let _ = save_and_apply(&self.config);
             self.sync_lengths();
