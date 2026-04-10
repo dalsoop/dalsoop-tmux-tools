@@ -326,11 +326,12 @@ fn render_line_panes(config: &Config, idx: usize) -> Result<()> {
 }
 
 fn render_line_apps(config: &Config, idx: usize) -> Result<()> {
-    if config.apps.is_empty() {
+    let all: Vec<_> = config.all_apps().collect();
+    if all.is_empty() {
         return Ok(());
     }
     let mut parts = Vec::new();
-    for (i, app) in config.apps.iter().enumerate() {
+    for (i, app) in all.iter().enumerate() {
         let range_id = format!("_app{i}");
         parts.push(click(
             &range_id,

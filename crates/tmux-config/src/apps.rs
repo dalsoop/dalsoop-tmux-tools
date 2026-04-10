@@ -23,7 +23,8 @@ pub fn edit_form(config: &Config, idx: usize) -> Form {
         vec![
             Field { label: "Emoji", value: a.emoji.clone() },
             Field { label: "Command", value: a.command.clone() },
-            Field { label: "Mode (window/pane)", value: a.mode.clone() },
+            // mode 미지정 (None) 일 때는 빈 문자열 — 글로벌 default_app_mode 따름을 의미
+            Field { label: "Mode (window/pane, 빈값=기본)", value: a.mode.clone().unwrap_or_default() },
             Field { label: "FG color", value: a.fg.clone() },
             Field { label: "BG color", value: a.bg.clone() },
         ],
@@ -36,9 +37,16 @@ pub fn apply_form(config: &mut Config, form: &Form) {
     let values = form.values();
     let emoji = values[0].to_owned();
     let command = values[1].to_owned();
-    let mode = {
+    // mode 입력 — 빈 문자열이면 None (글로벌 default_app_mode 따름)
+    let mode: Option<String> = {
         let raw = values[2].trim().to_lowercase();
-        if raw == "pane" { "pane".into() } else { "window".into() }
+        if raw.is_empty() {
+            None
+        } else if raw == "pane" {
+            Some("pane".into())
+        } else {
+            Some("window".into())
+        }
     };
     let fg = values[3].to_owned();
     let bg = values[4].to_owned();
@@ -60,7 +68,8 @@ pub fn apply_form(config: &mut Config, form: &Form) {
 
 /// Format a single app entry for list display.
 pub fn display(a: &AppEntry) -> String {
-    format!("{} {}  [{}]  fg={} bg={}", a.emoji, a.command, a.mode, a.fg, a.bg)
+    let mode_str = a.mode.as_deref().unwrap_or("기본");
+    format!("{} {}  [{}]  fg={} bg={}", a.emoji, a.command, mode_str, a.fg, a.bg)
 }
 
 /// Delete entry at idx.
@@ -104,7 +113,7 @@ mod tests {
         assert_eq!(config.apps.len(), initial_count + 1);
         let added = config.apps.last().unwrap();
         assert_eq!(added.command, "cargo");
-        assert_eq!(added.mode, "pane");
+        assert_eq!(added.mode.as_deref(), Some("pane"));
     }
 
     #[test]
@@ -128,7 +137,24 @@ mod tests {
         form.fields[3].value = "#fff".into();
         form.fields[4].value = "#000".into();
         apply_form(&mut config, &form);
-        assert_eq!(config.apps.last().unwrap().mode, "window");
+        assert_eq!(config.apps.last().unwrap().mode.as_deref(), Some("window"));
+    }
+
+    #[test]
+    fn apply_form_empty_mode_means_default_inheritance() {
+        // 빈 mode 입력 → None — 글로벌 default_app_mode 따름
+        let mut config = default_config();
+        let mut form = add_form(&config);
+        form.fields[0].value = "\u{1f4e6}".into();
+        form.fields[1].value = "follow-default".into();
+        form.fields[2].value = "".into();
+        form.fields[3].value = "#fff".into();
+        form.fields[4].value = "#000".into();
+        apply_form(&mut config, &form);
+        let added = config.apps.last().unwrap();
+        assert!(added.mode.is_none());
+        // effective_mode 는 글로벌 따라감
+        assert_eq!(added.effective_mode(&config.window), config.window.default_app_mode);
     }
 
     #[test]
