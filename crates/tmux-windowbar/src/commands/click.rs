@@ -62,6 +62,14 @@ pub fn run(range: &str) -> Result<()> {
         tmux::run(&["split-window", "-h"])?;
     } else if range == "_splitv" {
         tmux::run(&["split-window", "-v"])?;
+    } else if range == "_nextlayout" {
+        tmux::run(&["next-layout"])?;
+    } else if range == "_zoom" {
+        tmux::run(&["resize-pane", "-Z"])?;
+    } else if range == "_rotate" {
+        tmux::run(&["rotate-window"])?;
+    } else if range == "_sync" {
+        tmux::run(&["set", "synchronize-panes"])?;
     } else if range == "_wnew_" {
         tmux::run(&["new-window"])?;
     } else if let Some(idx) = range.strip_prefix("_wk") {

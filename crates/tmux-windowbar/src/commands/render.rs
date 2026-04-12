@@ -168,12 +168,7 @@ fn render_panes(config: &Config) -> Result<String> {
 
     let mut result = parts.join(" ");
 
-    // Split buttons
-    result.push_str(&format!(
-        " {}{}",
-        click("_splith", &w.button_fg, &w.button_bg, false, " | "),
-        click("_splitv", &w.button_fg, &w.button_bg, false, " - "),
-    ));
+    // Split buttons (main controls moved to sessionbar line 1 right)
 
     Ok(result)
 }
@@ -293,12 +288,24 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
         ssh_parts.push(block);
     }
 
+    let btn_fg = &w.button_fg;
+    let btn_bg = &w.button_bg;
+    let pane_controls = format!(
+        "{}{}{}{}{}{}",
+        click("_splith", btn_fg, btn_bg, false, " | "),
+        click("_splitv", btn_fg, btn_bg, false, " - "),
+        click("_nextlayout", btn_fg, btn_bg, false, " ⊞ "),
+        click("_zoom", btn_fg, btn_bg, false, " ⤢ "),
+        click("_rotate", btn_fg, btn_bg, false, " ↻ "),
+        click("_sync", btn_fg, btn_bg, false, " ⇆ "),
+    );
+
     let mut line = Line::new().left().push(&label("Users", &th.users_label));
     line = line.push(&parts.join(" "));
     if !ssh_parts.is_empty() {
         line = line.push("  ").push(&ssh_parts.join(" "));
     }
-    let format = line.build();
+    let format = line.right().push(&pane_controls).build();
     tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
     Ok(())
 }

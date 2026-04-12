@@ -17,6 +17,18 @@ pub fn run(range: &str) -> Result<()> {
         if let Some(name) = resolve_session_by_index(idx_str) {
             tmux::switch_client(&format!("={name}"))?;
         }
+    } else if range == "_splith" {
+        tmux::run(&["split-window", "-h"])?;
+    } else if range == "_splitv" {
+        tmux::run(&["split-window", "-v"])?;
+    } else if range == "_nextlayout" {
+        tmux::run(&["next-layout"])?;
+    } else if range == "_zoom" {
+        tmux::run(&["resize-pane", "-Z"])?;
+    } else if range == "_rotate" {
+        tmux::run(&["rotate-window"])?;
+    } else if range == "_sync" {
+        tmux::run(&["set", "synchronize-panes"])?;
     } else {
         // Fallback: treat range as session name (for backward compat)
         tmux::switch_client(&format!("={range}"))?;
