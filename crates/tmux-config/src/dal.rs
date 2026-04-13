@@ -15,22 +15,26 @@ pub enum TestStatus {
 /// A single test item in the queue
 #[derive(Debug, Clone)]
 pub struct TestItem {
-    pub trigger: String,   // file that triggered this test
-    pub label: String,     // display label (e.g. "tmux-fmt unit")
-    pub command: String,   // full command to run
+    pub trigger: String,
+    pub label: String,
+    pub command: String,
     pub status: TestStatus,
-    pub output: String,    // stdout+stderr
+    pub output: String,
     pub duration_ms: u64,
+    pub submitted_at: Option<Instant>,
 }
 
-/// Dal test runner state
+/// Dal test runner state — delegates to dalcenter tester
 pub struct DalState {
     pub queue: Vec<TestItem>,
     pub file_mtimes: HashMap<PathBuf, SystemTime>,
     pub project_root: PathBuf,
     pub last_scan: Option<Instant>,
+    pub last_poll: Option<Instant>,
     pub auto_scan: bool,
-    pub running: bool,
+    pub dal_target: String,
+    pub workspace_name: String,
+    pub tester_alive: bool,
 }
 
 /// Map a changed file path to test commands
@@ -40,7 +44,6 @@ fn file_to_tests(path: &Path, root: &Path) -> Vec<(String, String)> {
 
     let mut tests = Vec::new();
 
-    // Rust source → cargo test for the crate
     if rel_str.ends_with(".rs") {
         let crate_name = if rel_str.starts_with("crates/") {
             rel.components().nth(1).map(|c| c.as_os_str().to_string_lossy().to_string())
@@ -61,7 +64,6 @@ fn file_to_tests(path: &Path, root: &Path) -> Vec<(String, String)> {
         }
     }
 
-    // BATS test file changed
     if rel_str.ends_with(".bats") {
         tests.push((
             "smoke (BATS)".into(),
@@ -69,7 +71,6 @@ fn file_to_tests(path: &Path, root: &Path) -> Vec<(String, String)> {
         ));
     }
 
-    // Click/render handler changed → also run smoke tests
     if rel_str.contains("click.rs") || rel_str.contains("render.rs") {
         tests.push((
             "smoke (BATS)".into(),
@@ -77,7 +78,6 @@ fn file_to_tests(path: &Path, root: &Path) -> Vec<(String, String)> {
         ));
     }
 
-    // Config template changed → test config roundtrip
     if rel_str.contains("template.rs") || rel_str.contains("config") {
         tests.push((
             "config roundtrip".into(),
@@ -88,16 +88,72 @@ fn file_to_tests(path: &Path, root: &Path) -> Vec<(String, String)> {
     tests
 }
 
+/// Detect workspace name from project root directory name
+fn detect_workspace_name(root: &Path) -> String {
+    root.file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string()
+}
+
 impl DalState {
     pub fn new(project_root: PathBuf) -> Self {
+        let workspace_name = detect_workspace_name(&project_root);
+        let dal_target = format!("{workspace_name}--tester");
         Self {
             queue: Vec::new(),
             file_mtimes: HashMap::new(),
             project_root,
             last_scan: None,
+            last_poll: None,
             auto_scan: true,
-            running: false,
+            dal_target,
+            workspace_name,
+            tester_alive: false,
         }
+    }
+
+    /// Check if tester dal is alive
+    pub fn check_tester_status(&mut self) {
+        let output = Command::new("dalcenter")
+            .args(["status"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output();
+
+        if let Ok(out) = output {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            // Look for our tester line and check if "running"
+            for line in stdout.lines() {
+                if line.contains(&format!("{}/tester", self.workspace_name)) {
+                    self.tester_alive = line.contains("running");
+                    return;
+                }
+            }
+        }
+        self.tester_alive = false;
+    }
+
+    /// Wake the tester dal
+    pub fn wake_tester(&mut self) {
+        let target = format!("{}/tester", self.workspace_name);
+        let _ = Command::new("dalcenter")
+            .args(["wake", &target])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output();
+        self.tester_alive = true;
+    }
+
+    /// Sleep the tester dal
+    pub fn sleep_tester(&mut self) {
+        let target = format!("{}/tester", self.workspace_name);
+        let _ = Command::new("dalcenter")
+            .args(["sleep", &target])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output();
+        self.tester_alive = false;
     }
 
     /// Scan project for changed files and queue tests
@@ -114,16 +170,15 @@ impl DalState {
 
             let changed = match self.file_mtimes.get(&path) {
                 Some(old) => *old != mtime,
-                None => true, // new file
+                None => true,
             };
 
             if changed {
                 self.file_mtimes.insert(path.clone(), mtime);
 
                 for (label, cmd) in file_to_tests(&path, &root) {
-                    // Deduplicate: don't add if same command already pending
                     let already = self.queue.iter().any(|t| {
-                        t.command == cmd && t.status == TestStatus::Pending
+                        t.command == cmd && (t.status == TestStatus::Pending || t.status == TestStatus::Running)
                     }) || new_tests.iter().any(|t| t.command == cmd);
 
                     if !already {
@@ -135,6 +190,7 @@ impl DalState {
                             status: TestStatus::Pending,
                             output: String::new(),
                             duration_ms: 0,
+                            submitted_at: None,
                         });
                     }
                 }
@@ -145,53 +201,127 @@ impl DalState {
         self.last_scan = Some(Instant::now());
     }
 
-    /// Run the next pending test (blocking — call from a thread or tick)
-    pub fn run_next(&mut self) -> bool {
+    /// Submit the next pending test to dalcenter (non-blocking)
+    pub fn submit_next(&mut self) -> bool {
         let idx = match self.queue.iter().position(|t| t.status == TestStatus::Pending) {
             Some(i) => i,
             None => return false,
         };
 
-        self.running = true;
-        self.queue[idx].status = TestStatus::Running;
+        let task_msg = format!(
+            "프로젝트 루트에서 다음 테스트를 실행하고 결과를 보고해줘: {}",
+            self.queue[idx].command
+        );
 
-        let cmd = &self.queue[idx].command;
-        let start = Instant::now();
-
-        let result = Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .current_dir(&self.project_root)
+        let result = Command::new("dalcenter")
+            .args([
+                "send",
+                "--msg-type", "task",
+                &self.dal_target,
+                &task_msg,
+            ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output();
 
-        let elapsed = start.elapsed().as_millis() as u64;
-
         match result {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                self.queue[idx].output = format!("{stdout}{stderr}");
-                self.queue[idx].status = if output.status.success() {
-                    TestStatus::Passed
-                } else {
-                    TestStatus::Failed
-                };
-                self.queue[idx].duration_ms = elapsed;
+            Ok(out) if out.status.success() => {
+                self.queue[idx].status = TestStatus::Running;
+                self.queue[idx].submitted_at = Some(Instant::now());
+                true
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                self.queue[idx].status = TestStatus::Failed;
+                self.queue[idx].output = format!("dalcenter send failed: {stderr}");
+                false
             }
             Err(e) => {
-                self.queue[idx].output = format!("exec error: {e}");
                 self.queue[idx].status = TestStatus::Failed;
-                self.queue[idx].duration_ms = elapsed;
+                self.queue[idx].output = format!("dalcenter not found: {e}");
+                false
+            }
+        }
+    }
+
+    /// Submit all pending tests
+    pub fn submit_all(&mut self) {
+        loop {
+            if !self.submit_next() {
+                break;
+            }
+        }
+    }
+
+    /// Poll dalcenter for test results from tester dal
+    pub fn poll_results(&mut self) {
+        if !self.has_running() {
+            return;
+        }
+
+        let output = Command::new("dalcenter")
+            .args(["logs", &format!("{}/tester", self.workspace_name), "-n", "30"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output();
+
+        let logs = match output {
+            Ok(out) if out.status.success() => {
+                String::from_utf8_lossy(&out.stdout).to_string()
+            }
+            _ => return,
+        };
+
+        // Parse logs for test results
+        // Look for patterns like "cargo test ... ok" or "FAILED"
+        for item in self.queue.iter_mut().filter(|t| t.status == TestStatus::Running) {
+            // Check if the test command appears in logs with a result
+            let cmd_keyword = item.command
+                .split_whitespace()
+                .last()
+                .unwrap_or(&item.command);
+
+            for line in logs.lines() {
+                if !line.contains(cmd_keyword) {
+                    continue;
+                }
+                if line.contains("test result: ok") || line.contains("PASSED") || line.contains("passed") {
+                    item.status = TestStatus::Passed;
+                    item.output = line.to_string();
+                    if let Some(start) = item.submitted_at {
+                        item.duration_ms = start.elapsed().as_millis() as u64;
+                    }
+                    break;
+                }
+                if line.contains("FAILED") || line.contains("failures") || line.contains("실패") {
+                    item.status = TestStatus::Failed;
+                    item.output = line.to_string();
+                    if let Some(start) = item.submitted_at {
+                        item.duration_ms = start.elapsed().as_millis() as u64;
+                    }
+                    break;
+                }
+            }
+
+            // Timeout: 5 minutes
+            if item.status == TestStatus::Running {
+                if let Some(start) = item.submitted_at {
+                    if start.elapsed().as_secs() > 300 {
+                        item.status = TestStatus::Failed;
+                        item.output = "timeout (5m)".into();
+                        item.duration_ms = start.elapsed().as_millis() as u64;
+                    }
+                }
             }
         }
 
-        self.running = false;
-        true
+        self.last_poll = Some(Instant::now());
     }
 
-    /// Count by status
+    pub fn has_running(&self) -> bool {
+        self.queue.iter().any(|t| t.status == TestStatus::Running)
+    }
+
     pub fn count_pending(&self) -> usize {
         self.queue.iter().filter(|t| t.status == TestStatus::Pending).count()
     }
@@ -204,28 +334,32 @@ impl DalState {
         self.queue.iter().filter(|t| t.status == TestStatus::Failed).count()
     }
 
-    /// Clear completed tests from queue
+    pub fn count_running(&self) -> usize {
+        self.queue.iter().filter(|t| t.status == TestStatus::Running).count()
+    }
+
     pub fn clear_done(&mut self) {
         self.queue.retain(|t| t.status == TestStatus::Pending || t.status == TestStatus::Running);
     }
 
-    /// Clear all tests
     pub fn clear_all(&mut self) {
         self.queue.clear();
     }
 
-    /// Manual add: run all tests
+    /// Queue all tests (without submitting)
     pub fn queue_all(&mut self) {
         let tests = [
             ("tmux-fmt unit", "cargo test -p tmux-fmt --lib"),
             ("tmux-sessionbar unit", "cargo test -p tmux-sessionbar --lib"),
             ("tmux-windowbar unit", "cargo test -p tmux-windowbar --lib"),
-            ("tmux-config unit", "cargo test -p tmux-config --lib"),
+            ("tmux-config unit", "cargo test -p tmux-config"),
             ("smoke (BATS)", "bash tests/run.sh"),
         ];
 
         for (label, cmd) in tests {
-            let already = self.queue.iter().any(|t| t.command == cmd && t.status == TestStatus::Pending);
+            let already = self.queue.iter().any(|t| {
+                t.command == cmd && (t.status == TestStatus::Pending || t.status == TestStatus::Running)
+            });
             if !already {
                 self.queue.push(TestItem {
                     trigger: "(manual)".into(),
@@ -234,13 +368,13 @@ impl DalState {
                     status: TestStatus::Pending,
                     output: String::new(),
                     duration_ms: 0,
+                    submitted_at: None,
                 });
             }
         }
     }
 }
 
-/// Collect all .rs and .bats files under the project root
 fn collect_source_files(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let dirs = ["crates", "tests"];
@@ -261,7 +395,6 @@ fn walk_dir(dir: &Path, files: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            // Skip target/ and .git/
             let name = path.file_name().unwrap_or_default().to_string_lossy();
             if name != "target" && name != ".git" {
                 walk_dir(&path, files);
@@ -302,23 +435,20 @@ mod tests {
         let root = PathBuf::from("/project");
         let path = PathBuf::from("/project/crates/tmux-windowbar/src/commands/click.rs");
         let tests = file_to_tests(&path, &root);
-        assert!(tests.len() >= 2); // unit + smoke
+        assert!(tests.len() >= 2);
     }
 
     #[test]
-    fn dedup_pending() {
-        let mut dal = DalState::new(PathBuf::from("/tmp"));
-        dal.queue.push(TestItem {
-            trigger: "a.rs".into(),
-            label: "test".into(),
-            command: "cargo test".into(),
-            status: TestStatus::Pending,
-            output: String::new(),
-            duration_ms: 0,
-        });
-        // queue_all should not add duplicate "cargo test" if already pending
-        // (but queue_all uses specific commands, so this tests the concept)
-        assert_eq!(dal.count_pending(), 1);
+    fn detect_workspace() {
+        let name = detect_workspace_name(Path::new("/root/workspace/dalsoop-tmux-tools"));
+        assert_eq!(name, "dalsoop-tmux-tools");
+    }
+
+    #[test]
+    fn dal_target_format() {
+        let dal = DalState::new(PathBuf::from("/root/workspace/dalsoop-tmux-tools"));
+        assert_eq!(dal.dal_target, "dalsoop-tmux-tools--tester");
+        assert_eq!(dal.workspace_name, "dalsoop-tmux-tools");
     }
 
     #[test]
@@ -331,6 +461,7 @@ mod tests {
             status: TestStatus::Passed,
             output: String::new(),
             duration_ms: 0,
+            submitted_at: None,
         });
         dal.queue.push(TestItem {
             trigger: "b.rs".into(),
@@ -339,9 +470,26 @@ mod tests {
             status: TestStatus::Pending,
             output: String::new(),
             duration_ms: 0,
+            submitted_at: None,
         });
         dal.clear_done();
         assert_eq!(dal.queue.len(), 1);
         assert_eq!(dal.queue[0].label, "pend");
+    }
+
+    #[test]
+    fn has_running_detection() {
+        let mut dal = DalState::new(PathBuf::from("/tmp"));
+        assert!(!dal.has_running());
+        dal.queue.push(TestItem {
+            trigger: "a.rs".into(),
+            label: "test".into(),
+            command: "cargo test".into(),
+            status: TestStatus::Running,
+            output: String::new(),
+            duration_ms: 0,
+            submitted_at: Some(Instant::now()),
+        });
+        assert!(dal.has_running());
     }
 }

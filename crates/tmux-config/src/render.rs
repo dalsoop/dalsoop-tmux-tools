@@ -229,8 +229,11 @@ pub(crate) fn render_proxmox_list(f: &mut ratatui::Frame, app: &mut App, area: R
 pub(crate) fn render_dal_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
     let yellow = Color::Rgb(229, 192, 123);
 
+    let tester_status = if app.dal.tester_alive { "●" } else { "○" };
+    let running = app.dal.count_running();
+    let running_str = if running > 0 { format!("  {running} running") } else { String::new() };
     let summary = format!(
-        " Dal — {} pending  {} passed  {} failed ",
+        " Dal {tester_status} — {} pending{running_str}  {} passed  {} failed ",
         app.dal.count_pending(),
         app.dal.count_passed(),
         app.dal.count_failed(),
@@ -245,6 +248,12 @@ pub(crate) fn render_dal_list(f: &mut ratatui::Frame, app: &mut App, area: Rect)
         };
         let duration = if t.duration_ms > 0 {
             format!(" ({:.1}s)", t.duration_ms as f64 / 1000.0)
+        } else if t.status == dal::TestStatus::Running {
+            if let Some(start) = t.submitted_at {
+                format!(" ({:.0}s...)", start.elapsed().as_secs_f64())
+            } else {
+                " (...)".into()
+            }
         } else {
             String::new()
         };
@@ -399,12 +408,13 @@ pub(crate) fn render_hint(f: &mut ratatui::Frame, app: &App, area: Rect) {
                     Line::from(spans)
                 } else if app.tab == Tab::Dal {
                     Line::from(vec![
+                        Span::styled("[w]", Style::default().fg(GREEN)), Span::raw("ake  "),
+                        Span::styled("[W]", Style::default().fg(RED)), Span::raw(" sleep  "),
                         Span::styled("[s]", Style::default().fg(BLUE)), Span::raw("can  "),
-                        Span::styled("[r/Enter]", Style::default().fg(GREEN)), Span::raw(" run next  "),
+                        Span::styled("[r/Enter]", Style::default().fg(GREEN)), Span::raw(" submit  "),
                         Span::styled("[a]", Style::default().fg(BLUE)), Span::raw("ll  "),
-                        Span::styled("[c]", Style::default().fg(SUBTLE)), Span::raw("lear done  "),
-                        Span::styled("[C]", Style::default().fg(RED)), Span::raw("lear all  "),
-                        Span::styled("[Tab]", Style::default().fg(SUBTLE)), Span::raw(" tab  "),
+                        Span::styled("[A]", Style::default().fg(BLUE)), Span::raw("ll+run  "),
+                        Span::styled("[c]", Style::default().fg(SUBTLE)), Span::raw("lear  "),
                         Span::styled("[q]", Style::default().fg(SUBTLE)), Span::raw("uit"),
                     ])
                 } else {

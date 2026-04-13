@@ -420,13 +420,16 @@ impl App {
             KeyCode::Char('e') if self.tab != Tab::Proxmox && self.tab != Tab::Dal => self.start_edit(),
             KeyCode::Enter if self.tab != Tab::Proxmox && self.tab != Tab::Dal => self.start_edit(),
             KeyCode::Char('d') if self.tab != Tab::Proxmox && self.tab != Tab::Dal => self.start_delete(),
-            // Dal: test runner
+            // Dal: dalcenter-delegated test runner
             KeyCode::Char('s') if self.tab == Tab::Dal => { self.dal.scan(); self.dal_sync_list(); }
-            KeyCode::Char('r') if self.tab == Tab::Dal => { self.dal.run_next(); self.dal_sync_list(); }
+            KeyCode::Char('r') if self.tab == Tab::Dal => { self.dal.submit_next(); self.dal_sync_list(); }
+            KeyCode::Enter if self.tab == Tab::Dal => { self.dal.submit_next(); self.dal_sync_list(); }
             KeyCode::Char('a') if self.tab == Tab::Dal => { self.dal.queue_all(); self.dal_sync_list(); }
+            KeyCode::Char('A') if self.tab == Tab::Dal => { self.dal.queue_all(); self.dal.submit_all(); self.dal_sync_list(); }
             KeyCode::Char('c') if self.tab == Tab::Dal => { self.dal.clear_done(); self.dal_sync_list(); }
             KeyCode::Char('C') if self.tab == Tab::Dal => { self.dal.clear_all(); self.dal_sync_list(); }
-            KeyCode::Enter if self.tab == Tab::Dal => { self.dal.run_next(); self.dal_sync_list(); }
+            KeyCode::Char('w') if self.tab == Tab::Dal => { self.dal.wake_tester(); self.status_msg = Some("tester dal waking...".into()); }
+            KeyCode::Char('W') if self.tab == Tab::Dal => { self.dal.sleep_tester(); self.status_msg = Some("tester dal sleeping...".into()); }
             KeyCode::Char('i') if self.tab == Tab::Apps => self.open_seed_browser(),
             KeyCode::Char('c') if self.tab == Tab::Ssh => return self.connect_ssh(),
             // Proxmox: hierarchical navigation
@@ -548,13 +551,26 @@ fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) 
             render::render(f, app);
         })?;
 
-        // Auto-scan for file changes when Dal tab is active
-        if app.tab == Tab::Dal && app.dal.auto_scan {
-            let should_scan = app.dal.last_scan
-                .map_or(true, |t| t.elapsed().as_secs() >= 3);
-            if should_scan {
-                app.dal.scan();
-                app.dal_sync_list();
+        // Dal tab: auto-scan + result polling
+        if app.tab == Tab::Dal {
+            // File change scan + tester status check (every 3s)
+            if app.dal.auto_scan {
+                let should_scan = app.dal.last_scan
+                    .map_or(true, |t| t.elapsed().as_secs() >= 3);
+                if should_scan {
+                    app.dal.scan();
+                    app.dal.check_tester_status();
+                    app.dal_sync_list();
+                }
+            }
+            // Poll dalcenter for results (every 2s when tests running)
+            if app.dal.has_running() {
+                let should_poll = app.dal.last_poll
+                    .map_or(true, |t| t.elapsed().as_secs() >= 2);
+                if should_poll {
+                    app.dal.poll_results();
+                    app.dal_sync_list();
+                }
             }
         }
 
