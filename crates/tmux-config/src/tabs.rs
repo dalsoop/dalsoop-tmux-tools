@@ -11,12 +11,13 @@ pub enum Tab {
     Ssh,
     Apps,
     Proxmox,
+    Dal,
     Settings,
 }
 
 impl Tab {
     pub fn titles() -> Vec<&'static str> {
-        vec!["SSH", "Apps", "Proxmox", "Settings"]
+        vec!["SSH", "Apps", "Proxmox", "Dal", "Settings"]
     }
 
     pub fn index(self) -> usize {
@@ -24,7 +25,8 @@ impl Tab {
             Tab::Ssh      => 0,
             Tab::Apps     => 1,
             Tab::Proxmox  => 2,
-            Tab::Settings => 3,
+            Tab::Dal      => 3,
+            Tab::Settings => 4,
         }
     }
 
@@ -32,7 +34,8 @@ impl Tab {
         match idx {
             1 => Tab::Apps,
             2 => Tab::Proxmox,
-            3 => Tab::Settings,
+            3 => Tab::Dal,
+            4 => Tab::Settings,
             _ => Tab::Ssh,
         }
     }
