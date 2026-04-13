@@ -12,3 +12,6 @@ toml = "0.8"
 tmux-windowbar = { path = "../tmux-windowbar" }
 tmux-sessionbar = { path = "../tmux-sessionbar" }
 tmux-fmt = { path = "../tmux-fmt" }
+
+[build-dependencies]
+hardcoded-lint = { git = "https://github.com/dalsoop/hardcoded-lint" }

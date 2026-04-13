@@ -12,3 +12,6 @@ categories = ["command-line-utilities"]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+
+[build-dependencies]
+hardcoded-lint = { git = "https://github.com/dalsoop/hardcoded-lint" }

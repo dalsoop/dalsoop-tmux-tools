@@ -14,3 +14,6 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 tmux-fmt = { path = "../tmux-fmt" }
 toml = "0.8"
+
+[build-dependencies]
+hardcoded-lint = { git = "https://github.com/dalsoop/hardcoded-lint" }
