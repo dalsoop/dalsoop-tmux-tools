@@ -2,33 +2,33 @@ use anyhow::Result;
 use tmux_fmt::tmux;
 use tmux_fmt::tmux::sanitize as sanitize_tmux;
 
+/// Simple range → tmux command mappings (exact match)
+const SIMPLE_ACTIONS: &[(&str, &[&str])] = &[
+    ("window", &["select-window"]),
+    ("_new_", &["new-session", "-d"]),
+    ("_splith", &["split-window", "-h"]),
+    ("_splitv", &["split-window", "-v"]),
+    ("_nextlayout", &["next-layout"]),
+    ("_zoom", &["resize-pane", "-Z"]),
+    ("_rotate", &["rotate-window"]),
+    ("_sync", &["set", "synchronize-panes"]),
+];
+
 pub fn run(range: &str) -> Result<()> {
-    if range == "window" {
-        tmux::run(&["select-window"])?;
-    } else if range == "_new_" {
-        tmux::run(&["new-session", "-d"])?;
-    } else if let Some(idx_str) = range.strip_prefix("_k") {
-        // Kill by index — resolve to session name
+    // Exact match — simple tmux commands
+    if let Some((_, args)) = SIMPLE_ACTIONS.iter().find(|(id, _)| *id == range) {
+        return tmux::run(args);
+    }
+
+    // Prefix match — complex handlers
+    if let Some(idx_str) = range.strip_prefix("_k") {
         if let Some(name) = resolve_session_by_index(idx_str) {
             kill_session(&name)?;
         }
     } else if let Some(idx_str) = range.strip_prefix("_s") {
-        // Switch by index — resolve to session name
         if let Some(name) = resolve_session_by_index(idx_str) {
             tmux::switch_client(&format!("={name}"))?;
         }
-    } else if range == "_splith" {
-        tmux::run(&["split-window", "-h"])?;
-    } else if range == "_splitv" {
-        tmux::run(&["split-window", "-v"])?;
-    } else if range == "_nextlayout" {
-        tmux::run(&["next-layout"])?;
-    } else if range == "_zoom" {
-        tmux::run(&["resize-pane", "-Z"])?;
-    } else if range == "_rotate" {
-        tmux::run(&["rotate-window"])?;
-    } else if range == "_sync" {
-        tmux::run(&["set", "synchronize-panes"])?;
     } else {
         // Fallback: treat range as session name (for backward compat)
         tmux::switch_client(&format!("={range}"))?;
@@ -38,9 +38,6 @@ pub fn run(range: &str) -> Result<()> {
 }
 
 /// Resolve a visible session index to its name.
-///
-/// The index corresponds to the order sessions appear in the status bar
-/// (filtered by @view_user).
 fn resolve_session_by_index(idx_str: &str) -> Option<String> {
     let idx: usize = idx_str.parse().ok()?;
     let sessions = tmux::lines(&["list-sessions", "-F", "#{session_name}"]).ok()?;

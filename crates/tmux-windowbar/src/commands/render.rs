@@ -105,7 +105,15 @@ fn render_all_windows(config: &Config) -> Result<String> {
         parts.push(block);
     }
 
-    Ok(parts.join(" "))
+    let mut result = parts.join(" ");
+    if w.show_new_button {
+        result.push_str(&format!(
+            " {}",
+            click("_wnew_", &w.button_fg, &w.button_bg, false, " + ")
+        ));
+    }
+
+    Ok(result)
 }
 
 /// Renders panes for status-format
@@ -168,7 +176,12 @@ fn render_panes(config: &Config) -> Result<String> {
 
     let mut result = parts.join(" ");
 
-    // Split buttons (main controls moved to sessionbar line 1 right)
+    // Split buttons
+    result.push_str(&format!(
+        " {}{}",
+        click("_splith", &w.button_fg, &w.button_bg, false, " | "),
+        click("_splitv", &w.button_fg, &w.button_bg, false, " - "),
+    ));
 
     Ok(result)
 }
@@ -291,13 +304,10 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
     let btn_fg = &w.button_fg;
     let btn_bg = &w.button_bg;
     let pane_controls = format!(
-        "{}{}{}{}{}{}",
-        click("_splith", btn_fg, btn_bg, false, " | "),
-        click("_splitv", btn_fg, btn_bg, false, " - "),
-        click("_nextlayout", btn_fg, btn_bg, false, " ⊞ "),
-        click("_zoom", btn_fg, btn_bg, false, " ⤢ "),
-        click("_rotate", btn_fg, btn_bg, false, " ↻ "),
-        click("_sync", btn_fg, btn_bg, false, " ⇆ "),
+        "{}{}{}",
+        click("_nextlayout", btn_fg, btn_bg, false, "  ⊞  "),
+        click("_zoom", btn_fg, btn_bg, false, "  ⤢  "),
+        click("_rotate", btn_fg, btn_bg, false, "  ↻  "),
     );
 
     let mut line = Line::new().left().push(&label("Users", &th.users_label));
