@@ -135,7 +135,16 @@ pub(crate) fn render_standard_list(f: &mut ratatui::Frame, app: &mut App, area: 
         }
         Tab::Settings => {
             let items: Vec<ListItem> = app.setting_items.iter()
-                .map(|s| ListItem::new(format!("{:30}  {}", s.label, s.value)))
+                .map(|s| {
+                    if s.source == crate::settings::SettingSource::Header {
+                        ListItem::new(Line::from(Span::styled(
+                            s.label,
+                            Style::default().fg(BLUE).add_modifier(Modifier::BOLD),
+                        )))
+                    } else {
+                        ListItem::new(format!("  {:28}  {}", s.label, s.value))
+                    }
+                })
                 .collect();
             ("Settings", items, &mut app.settings)
         }

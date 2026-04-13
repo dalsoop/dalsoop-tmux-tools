@@ -10,4 +10,5 @@ ratatui = "0.29"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 tmux-windowbar = { path = "../tmux-windowbar" }
+tmux-sessionbar = { path = "../tmux-sessionbar" }
 tmux-fmt = { path = "../tmux-fmt" }

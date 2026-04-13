@@ -60,6 +60,7 @@ pub(crate) struct App {
     pub(crate) mode:           Mode,
     pub(crate) form:           Option<Form>,
     pub(crate) config:         Config,
+    pub(crate) sb_config:      Option<tmux_sessionbar::config::template::Config>,
     pub(crate) setting_items:  Vec<SettingItem>,
     pub(crate) status_msg:     Option<String>,
     // Dal test runner
@@ -78,7 +79,8 @@ pub(crate) struct App {
 
 impl App {
     fn new(config: Config) -> Self {
-        let setting_items = settings::build_items(&config);
+        let sb_config = config_io::load_sb_config().ok();
+        let setting_items = settings::build_items(&config, sb_config.as_ref());
         let pve_servers = proxmox::get_servers(&config);
         // Detect project root: walk up from cwd looking for Cargo.toml workspace
         let project_root = detect_project_root().unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
@@ -90,6 +92,7 @@ impl App {
             mode: Mode::Normal,
             form: None,
             config,
+            sb_config,
             setting_items,
             status_msg: None,
             dal: dal::DalState::new(project_root),
@@ -126,7 +129,7 @@ impl App {
     }
 
     fn reload_settings(&mut self) {
-        self.setting_items = settings::build_items(&self.config);
+        self.setting_items = settings::build_items(&self.config, self.sb_config.as_ref());
         self.settings.set_len(self.setting_items.len());
     }
 
@@ -169,7 +172,9 @@ impl App {
             }
             Tab::Settings => {
                 let idx = match self.settings.selected() { Some(i) => i, None => return };
-                settings::edit_form(&self.setting_items, idx)
+                let f = settings::edit_form(&self.setting_items, idx);
+                if f.fields.is_empty() { return; } // Header, not editable
+                f
             }
             Tab::Proxmox | Tab::Dal => return,
         };
@@ -358,7 +363,11 @@ impl App {
             Tab::Ssh  => ssh::apply_form(&mut self.config, &form),
             Tab::Apps => apps::apply_form(&mut self.config, &form),
             Tab::Settings => {
-                settings::apply_form(&mut self.config, &form);
+                settings::apply_form_wb(&mut self.config, &self.setting_items, &form);
+                if let Some(ref mut sb) = self.sb_config {
+                    settings::apply_form_sb(sb, &self.setting_items, &form);
+                    let _ = config_io::save_and_apply_sb(sb);
+                }
                 self.reload_settings();
             }
             Tab::Proxmox | Tab::Dal => {}
