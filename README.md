@@ -41,6 +41,7 @@ Apps      🔐 spf  🤖 claude  🧠 codex  📊 htop  🐍 python3  🖥️ ba
 | [tmux-fmt](crates/tmux-fmt/) | Type-safe tmux format string builder, tmux command helpers, re-entrancy guard |
 | [tmux-sessionbar](crates/tmux-sessionbar/) | Session management, status bar, CPU/memory, plugin manager, account sync |
 | [tmux-windowbar](crates/tmux-windowbar/) | Window/pane management, user switching, app launcher, layout save/restore |
+| [tmux-config](crates/tmux-config/) | TUI configuration manager (SSH, Apps, Proxmox, Dal test runner, Settings) |
 
 ## Requirements
 
@@ -52,16 +53,39 @@ Apps      🔐 spf  🤖 claude  🧠 codex  📊 htop  🐍 python3  🖥️ ba
 ## Install
 
 ```bash
-# Build from source
+# One-liner (downloads latest release)
+curl -sL https://raw.githubusercontent.com/dalsoop/dalsoop-tmux-tools/main/install.sh | bash
+
+# Update to latest
+install.sh update
+
+# Specific version
+install.sh --version v0.1.0
+
+# Uninstall (keeps config files)
+curl -sL https://raw.githubusercontent.com/dalsoop/dalsoop-tmux-tools/main/uninstall.sh | bash
+
+# Or build from source
 git clone https://github.com/dalsoop/dalsoop-tmux-tools.git
 cd dalsoop-tmux-tools
 cargo build --release
-
-# Install binaries
-sudo cp target/release/tmux-sessionbar target/release/tmux-windowbar /usr/local/bin/
+sudo cp target/release/{tmux-sessionbar,tmux-windowbar,tmux-config} /usr/local/bin/
 
 # One-step setup (does everything)
 tmux-sessionbar init
+```
+
+### Proxmox / phs integration
+
+```bash
+# Deploy to all running LXCs
+phs workspace tmux-tools-deploy-all
+
+# Install on a specific LXC
+phs workspace lxc-tmux-tools --vmid 50161
+
+# Auto-included in LXC bootstrap
+phs infra lxc-create --vmid 50199 --hostname myhost --ip 10.0.50.199 --bootstrap
 ```
 
 `tmux-sessionbar init` automatically:
@@ -82,8 +106,12 @@ dalsoop-tmux-tools/
 ├── crates/
 │   ├── tmux-fmt/          # Shared library: format builder + tmux helpers
 │   ├── tmux-sessionbar/   # CLI: session management + status bar
-│   └── tmux-windowbar/    # CLI: window/pane management
-└── tests/                 # Integration tests (bats)
+│   ├── tmux-windowbar/    # CLI: window/pane management
+│   └── tmux-config/       # TUI: configuration manager (ratatui)
+├── .dal/tester/           # dalcenter test runner dal
+├── tests/                 # Integration tests (bats)
+├── install.sh             # curl | sh installer
+└── uninstall.sh           # Uninstaller (keeps configs)
 ```
 
 ### tmux-fmt library
