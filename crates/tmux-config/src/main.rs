@@ -1,6 +1,7 @@
 mod apps;
 mod cli;
 mod config_io;
+mod dal;
 mod form;
 mod list_view;
 mod proxmox;
@@ -61,6 +62,9 @@ pub(crate) struct App {
     pub(crate) config:         Config,
     pub(crate) setting_items:  Vec<SettingItem>,
     pub(crate) status_msg:     Option<String>,
+    // Dal test runner
+    pub(crate) dal:            dal::DalState,
+    pub(crate) dal_list:       ListView,
     // Proxmox hierarchical state
     pub(crate) pve_list:       ListView,
     pub(crate) pve_depth:      usize, // 0=servers, 1=containers, 2=docker+ports
@@ -76,6 +80,8 @@ impl App {
     fn new(config: Config) -> Self {
         let setting_items = settings::build_items(&config);
         let pve_servers = proxmox::get_servers(&config);
+        // Detect project root: walk up from cwd looking for Cargo.toml workspace
+        let project_root = detect_project_root().unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
         let mut app = Self {
             tab: Tab::Ssh,
             ssh: ListView::new(),
@@ -86,6 +92,8 @@ impl App {
             config,
             setting_items,
             status_msg: None,
+            dal: dal::DalState::new(project_root),
+            dal_list: ListView::new(),
             pve_list: ListView::new(),
             pve_depth: 0,
             pve_servers,
@@ -127,8 +135,13 @@ impl App {
             Tab::Ssh      => &mut self.ssh,
             Tab::Apps     => &mut self.apps,
             Tab::Proxmox  => &mut self.pve_list,
+            Tab::Dal      => &mut self.dal_list,
             Tab::Settings => &mut self.settings,
         }
+    }
+
+    fn dal_sync_list(&mut self) {
+        self.dal_list.set_len(self.dal.queue.len());
     }
 
     fn move_down(&mut self) { self.current_list_mut().move_down(); }
@@ -138,7 +151,7 @@ impl App {
         self.form = Some(match self.tab {
             Tab::Ssh      => ssh::add_form(),
             Tab::Apps     => apps::add_form(&self.config),
-            Tab::Settings | Tab::Proxmox => return, // no "add" for these
+            Tab::Settings | Tab::Proxmox | Tab::Dal => return,
         });
         self.mode = Mode::Editing;
         self.status_msg = None;
@@ -158,7 +171,7 @@ impl App {
                 let idx = match self.settings.selected() { Some(i) => i, None => return };
                 settings::edit_form(&self.setting_items, idx)
             }
-            Tab::Proxmox => return, // no edit for containers
+            Tab::Proxmox | Tab::Dal => return,
         };
         self.form = Some(form);
         self.mode = Mode::Editing;
@@ -177,7 +190,7 @@ impl App {
                 let label = self.config.apps[idx].command.clone();
                 self.mode = Mode::Confirming { label, idx };
             }
-            Tab::Settings | Tab::Proxmox => {} // no delete for these
+            Tab::Settings | Tab::Proxmox | Tab::Dal => {}
         }
         self.status_msg = None;
     }
@@ -190,7 +203,7 @@ impl App {
         match self.tab {
             Tab::Ssh  => ssh::delete(&mut self.config, idx),
             Tab::Apps => apps::delete(&mut self.config, idx),
-            Tab::Settings | Tab::Proxmox => {}
+            Tab::Settings | Tab::Proxmox | Tab::Dal => {}
         }
         let _ = save_and_apply(&self.config);
         self.sync_lengths();
@@ -348,7 +361,7 @@ impl App {
                 settings::apply_form(&mut self.config, &form);
                 self.reload_settings();
             }
-            Tab::Proxmox => {}
+            Tab::Proxmox | Tab::Dal => {}
         }
         let _ = save_and_apply(&self.config);
         self.sync_lengths();
@@ -388,7 +401,7 @@ impl App {
             KeyCode::Esc if self.tab == Tab::Proxmox && self.pve_depth > 0 => self.pve_back(),
             KeyCode::Esc => return true,
             KeyCode::Tab | KeyCode::Char('\t') => {
-                let next = (self.tab.index() + 1) % 4;
+                let next = (self.tab.index() + 1) % 5;
                 self.tab = Tab::from_index(next);
                 self.status_msg = None;
             }
@@ -403,10 +416,17 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
             KeyCode::Up => self.move_up(),
             KeyCode::Char('k') if !(self.tab == Tab::Proxmox && self.pve_depth == 0) => self.move_up(),
-            KeyCode::Char('a') if self.tab != Tab::Proxmox => self.start_add(),
-            KeyCode::Char('e') if self.tab != Tab::Proxmox => self.start_edit(),
-            KeyCode::Enter if self.tab != Tab::Proxmox => self.start_edit(),
-            KeyCode::Char('d') if self.tab != Tab::Proxmox => self.start_delete(),
+            KeyCode::Char('a') if self.tab != Tab::Proxmox && self.tab != Tab::Dal => self.start_add(),
+            KeyCode::Char('e') if self.tab != Tab::Proxmox && self.tab != Tab::Dal => self.start_edit(),
+            KeyCode::Enter if self.tab != Tab::Proxmox && self.tab != Tab::Dal => self.start_edit(),
+            KeyCode::Char('d') if self.tab != Tab::Proxmox && self.tab != Tab::Dal => self.start_delete(),
+            // Dal: test runner
+            KeyCode::Char('s') if self.tab == Tab::Dal => { self.dal.scan(); self.dal_sync_list(); }
+            KeyCode::Char('r') if self.tab == Tab::Dal => { self.dal.run_next(); self.dal_sync_list(); }
+            KeyCode::Char('a') if self.tab == Tab::Dal => { self.dal.queue_all(); self.dal_sync_list(); }
+            KeyCode::Char('c') if self.tab == Tab::Dal => { self.dal.clear_done(); self.dal_sync_list(); }
+            KeyCode::Char('C') if self.tab == Tab::Dal => { self.dal.clear_all(); self.dal_sync_list(); }
+            KeyCode::Enter if self.tab == Tab::Dal => { self.dal.run_next(); self.dal_sync_list(); }
             KeyCode::Char('i') if self.tab == Tab::Apps => self.open_seed_browser(),
             KeyCode::Char('c') if self.tab == Tab::Ssh => return self.connect_ssh(),
             // Proxmox: hierarchical navigation
@@ -465,6 +485,20 @@ impl App {
     }
 }
 
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+fn detect_project_root() -> Option<std::path::PathBuf> {
+    let mut dir = std::env::current_dir().ok()?;
+    loop {
+        if dir.join("Cargo.toml").exists() {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
 // ─── entry point ─────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
@@ -513,6 +547,20 @@ fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) 
             body_area = chunks[1];
             render::render(f, app);
         })?;
+
+        // Auto-scan for file changes when Dal tab is active
+        if app.tab == Tab::Dal && app.dal.auto_scan {
+            let should_scan = app.dal.last_scan
+                .map_or(true, |t| t.elapsed().as_secs() >= 3);
+            if should_scan {
+                app.dal.scan();
+                app.dal_sync_list();
+            }
+        }
+
+        if !event::poll(std::time::Duration::from_millis(200))? {
+            continue;
+        }
 
         match event::read()? {
             Event::Key(key) => {
