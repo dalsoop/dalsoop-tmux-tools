@@ -17,7 +17,7 @@ pub fn list() -> Result<()> {
         println!("  {mark} {}{opts}", plugin.name);
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into()); // LINT_ALLOW: last-resort fallback when $HOME is unset
     let plugin_dir = format!("{home}/.tmux/plugins");
     if let Ok(entries) = std::fs::read_dir(&plugin_dir) {
         let installed: Vec<String> = entries
@@ -89,7 +89,7 @@ pub fn remove(name: &str) -> Result<()> {
 
     let _ = Command::new("tmux-sessionbar").args(["apply"]).status();
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into()); // LINT_ALLOW: last-resort fallback when $HOME is unset
     let short_name = name.split('/').next_back().unwrap_or(name);
     let plugin_path = format!("{home}/.tmux/plugins/{short_name}");
     if std::path::Path::new(&plugin_path).exists() {
@@ -109,7 +109,7 @@ pub fn install() -> Result<()> {
 fn apply_and_install() -> Result<()> {
     let _ = Command::new("tmux-sessionbar").args(["apply"]).status();
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into()); // LINT_ALLOW: last-resort fallback when $HOME is unset
     let tpm_install = format!("{home}/.tmux/plugins/tpm/bin/install_plugins");
 
     if std::path::Path::new(&tpm_install).exists() {

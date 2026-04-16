@@ -45,5 +45,5 @@ pub fn run() -> Result<()> {
 }
 
 fn home_dir() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/root".into()))
+    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/root".into())) // LINT_ALLOW: last-resort fallback when $HOME is unset
 }

@@ -96,7 +96,7 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
             let name = &args[1];
             let entry = config.ssh.iter().find(|e| e.name == *name)
                 .ok_or_else(|| anyhow::anyhow!("SSH host '{name}' not found"))?;
-            let user = entry.user.as_deref().unwrap_or("root");
+            let user = entry.user.as_deref().unwrap_or("root"); // LINT_ALLOW: default SSH user when entry.user is omitted
             let target = format!("{user}@{}", entry.host);
             let session_name = format!("ssh-{name}");
             let ssh_cmd = format!(
@@ -119,7 +119,7 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
         "app-list" => {
             let config = load_config()?;
             for a in &config.apps {
-                let mode_str = a.mode.as_deref().unwrap_or("기본");
+                let mode_str = a.mode.as_deref().unwrap_or("기본"); // LINT_ALLOW: display label when AppEntry.mode is omitted
                 println!("{} {:<20} [{}]", a.emoji, a.command, mode_str);
             }
             Ok(())
@@ -237,7 +237,7 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
             let config = load_config()?;
             for e in &config.ssh {
                 if e.r#type == "proxmox-api" { continue; } // skip API-only
-                let user = e.user.as_deref().unwrap_or("root");
+                let user = e.user.as_deref().unwrap_or("root"); // LINT_ALLOW: default SSH user when entry.user is omitted
                 let target = format!("{user}@{}", e.host);
                 let session_name = format!("ssh-{}", e.name);
 
@@ -287,7 +287,7 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
             let config = load_config()?;
             for e in &config.ssh {
                 if e.r#type == "proxmox-api" { continue; }
-                let user = e.user.as_deref().unwrap_or("root");
+                let user = e.user.as_deref().unwrap_or("root"); // LINT_ALLOW: default SSH user when entry.user is omitted
                 let target = format!("{user}@{}", e.host);
                 print!("  {:<15} ", e.name);
                 let output = std::process::Command::new("ssh")
@@ -301,7 +301,7 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
                     }
                     Ok(o) => {
                         let err = String::from_utf8_lossy(&o.stderr);
-                        let first_line = err.lines().next().unwrap_or("failed");
+                        let first_line = err.lines().next().unwrap_or("failed"); // LINT_ALLOW: placeholder when stderr is empty on non-zero exit
                         println!("✗ {first_line}");
                     }
                     Err(e) => println!("✗ {e}"),
@@ -492,7 +492,7 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
             }
 
             for e in &hosts {
-                let user = e.user.as_deref().unwrap_or("root");
+                let user = e.user.as_deref().unwrap_or("root"); // LINT_ALLOW: default SSH user when entry.user is omitted
                 let target = format!("{user}@{}", e.host);
                 println!("── {} ({}) ──", e.name, target);
 
@@ -526,7 +526,7 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
         "status" => {
             let config = load_config()?;
             for e in &config.ssh {
-                let user = e.user.as_deref().unwrap_or("root");
+                let user = e.user.as_deref().unwrap_or("root"); // LINT_ALLOW: default SSH user when entry.user is omitted
                 let target = format!("{user}@{}", e.host);
                 print!("  {:<15} {:<25} [{:<10}] ", e.name, target, e.r#type);
 

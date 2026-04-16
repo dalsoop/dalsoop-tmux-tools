@@ -68,7 +68,7 @@ pub fn apply_form(config: &mut Config, form: &Form) {
 
 /// Format a single app entry for list display.
 pub fn display(a: &AppEntry) -> String {
-    let mode_str = a.mode.as_deref().unwrap_or("기본");
+    let mode_str = a.mode.as_deref().unwrap_or("기본"); // LINT_ALLOW: display label when AppEntry.mode is omitted
     format!("{} {}  [{}]  fg={} bg={}", a.emoji, a.command, mode_str, a.fg, a.bg)
 }
 

@@ -104,7 +104,7 @@ pub fn register_host_key(host: &str) -> bool {
         .output();
     match output {
         Ok(o) if !o.stdout.is_empty() => {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into()); // LINT_ALLOW: last-resort fallback when $HOME is unset
             let known_hosts = std::path::PathBuf::from(home).join(".ssh/known_hosts");
             std::fs::OpenOptions::new()
                 .create(true)
@@ -158,18 +158,16 @@ fn ssh_run(user: &str, host: &str, cmd: &str) -> Option<String> {
     }
     // Detect host key verification failure and offer to fix it
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("Host key verification failed") {
-        if ensure_host_key(host) {
-            // Retry after registering the key
-            let output = Command::new("ssh")
-                .args(SSH_OPTS)
-                .arg(&target)
-                .arg(cmd)
-                .output()
-                .ok()?;
-            if output.status.success() {
-                return Some(String::from_utf8_lossy(&output.stdout).to_string());
-            }
+    if stderr.contains("Host key verification failed") && ensure_host_key(host) {
+        // Retry after registering the key
+        let output = Command::new("ssh")
+            .args(SSH_OPTS)
+            .arg(&target)
+            .arg(cmd)
+            .output()
+            .ok()?;
+        if output.status.success() {
+            return Some(String::from_utf8_lossy(&output.stdout).to_string());
         }
     }
     None

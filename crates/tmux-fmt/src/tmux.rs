@@ -128,7 +128,7 @@ pub fn should_show_for_user(name: &str, view_user: &str) -> bool {
 ///
 /// Falls back to `/root` if the `HOME` environment variable is not set.
 pub fn home_dir() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/root".into()))
+    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/root".into())) // LINT_ALLOW: documented last-resort fallback when $HOME is unset
 }
 
 // ── Client targeting ──

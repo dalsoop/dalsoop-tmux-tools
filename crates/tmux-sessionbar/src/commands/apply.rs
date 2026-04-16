@@ -4,12 +4,16 @@ use anyhow::{Context, Result, bail};
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use std::process::Command;
 use tmux_fmt::shims;
 use tmux_fmt::tmux;
 
-const CLEAR_HISTORY_SCRIPT: &str = "/usr/local/bin/tmux-clear-history";
 const CLEAR_HISTORY_MARKER: &str = "tmux-clear-history";
+
+fn clear_history_script() -> PathBuf {
+    template::bin_dir().join(CLEAR_HISTORY_MARKER)
+}
 
 pub fn run() -> Result<()> {
     let home = tmux::home_dir();
@@ -61,16 +65,20 @@ pub fn run() -> Result<()> {
 }
 
 fn setup_maintenance(config: &template::Config) -> Result<()> {
+    let script_path = clear_history_script();
     if config.maintenance.auto_clear {
         let script = "#!/bin/bash\n\
             tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null | while read pane; do\n\
             \ttmux clear-history -t \"$pane\" 2>/dev/null\n\
             done\n";
 
-        let mut file = fs::File::create(CLEAR_HISTORY_SCRIPT)?;
+        if let Some(parent) = script_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut file = fs::File::create(&script_path)?;
         file.write_all(script.as_bytes())?;
-        fs::set_permissions(CLEAR_HISTORY_SCRIPT, fs::Permissions::from_mode(0o755))?;
-        println!("installed: {}", CLEAR_HISTORY_SCRIPT);
+        fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755))?;
+        println!("installed: {}", script_path.display());
 
         let existing = Command::new("crontab")
             .arg("-l")
@@ -85,7 +93,8 @@ fn setup_maintenance(config: &template::Config) -> Result<()> {
 
         let cron_entry = format!(
             "*/{} * * * * {}",
-            config.maintenance.clear_interval, CLEAR_HISTORY_SCRIPT
+            config.maintenance.clear_interval,
+            script_path.display()
         );
 
         let mut new_crontab = filtered.join("\n");
@@ -108,14 +117,15 @@ fn setup_maintenance(config: &template::Config) -> Result<()> {
 
         println!(
             "cron installed: every {} min -> {}",
-            config.maintenance.clear_interval, CLEAR_HISTORY_SCRIPT
+            config.maintenance.clear_interval,
+            script_path.display()
         );
     } else {
         remove_cron_entry()?;
 
-        if std::path::Path::new(CLEAR_HISTORY_SCRIPT).exists() {
-            fs::remove_file(CLEAR_HISTORY_SCRIPT)?;
-            println!("removed: {}", CLEAR_HISTORY_SCRIPT);
+        if script_path.exists() {
+            fs::remove_file(&script_path)?;
+            println!("removed: {}", script_path.display());
         }
     }
 

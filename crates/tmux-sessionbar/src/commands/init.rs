@@ -146,8 +146,14 @@ pub fn run() -> Result<()> {
 fn register_local_host() {
     let hostname = Command::new("hostname")
         .output()
+        .ok()
+        .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|_| "localhost".into());
+        .filter(|s| !s.is_empty());
+    let Some(hostname) = hostname else {
+        println!("[6/8] skipped local host registration (hostname detection failed)");
+        return;
+    };
 
     // Check if already registered
     let list_output = Command::new("tmux-config")
