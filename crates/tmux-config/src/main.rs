@@ -565,7 +565,7 @@ fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) 
             // File change scan + tester status check (every 3s)
             if app.dal.auto_scan {
                 let should_scan = app.dal.last_scan
-                    .map_or(true, |t| t.elapsed().as_secs() >= 3);
+                    .is_none_or(|t| t.elapsed().as_secs() >= 3);
                 if should_scan {
                     app.dal.scan();
                     app.dal.check_tester_status();
@@ -575,7 +575,7 @@ fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) 
             // Poll dalcenter for results (every 2s when tests running)
             if app.dal.has_running() {
                 let should_poll = app.dal.last_poll
-                    .map_or(true, |t| t.elapsed().as_secs() >= 2);
+                    .is_none_or(|t| t.elapsed().as_secs() >= 2);
                 if should_poll {
                     app.dal.poll_results();
                     app.dal_sync_list();

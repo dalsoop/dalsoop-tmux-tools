@@ -158,18 +158,16 @@ fn ssh_run(user: &str, host: &str, cmd: &str) -> Option<String> {
     }
     // Detect host key verification failure and offer to fix it
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("Host key verification failed") {
-        if ensure_host_key(host) {
-            // Retry after registering the key
-            let output = Command::new("ssh")
-                .args(SSH_OPTS)
-                .arg(&target)
-                .arg(cmd)
-                .output()
-                .ok()?;
-            if output.status.success() {
-                return Some(String::from_utf8_lossy(&output.stdout).to_string());
-            }
+    if stderr.contains("Host key verification failed") && ensure_host_key(host) {
+        // Retry after registering the key
+        let output = Command::new("ssh")
+            .args(SSH_OPTS)
+            .arg(&target)
+            .arg(cmd)
+            .output()
+            .ok()?;
+        if output.status.success() {
+            return Some(String::from_utf8_lossy(&output.stdout).to_string());
         }
     }
     None
