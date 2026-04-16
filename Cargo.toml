@@ -4,6 +4,3 @@ members = [
     "crates/tmux-fmt", "crates/tmux-sessionbar", "crates/tmux-windowbar",
     "crates/tmux-config",
 ]
-
-[build-dependencies]
-hardcoded-lint = { git = "https://github.com/dalsoop/hardcoded-lint" }

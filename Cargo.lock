@@ -239,6 +239,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
+name = "hardcoded-lint"
+version = "0.1.0"
+source = "git+https://github.com/dalsoop/hardcoded-lint#c943f1f2cd9f9afd94bc8549b15d0824c3c5db53"
+
+[[package]]
 name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -615,9 +620,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "hardcoded-lint",
  "ratatui",
  "serde",
  "tmux-fmt",
+ "tmux-sessionbar",
  "tmux-windowbar",
  "toml",
 ]
@@ -627,6 +634,7 @@ name = "tmux-fmt"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "hardcoded-lint",
  "serde",
  "toml",
 ]
@@ -637,6 +645,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "hardcoded-lint",
  "serde",
  "tmux-fmt",
  "toml",
@@ -648,6 +657,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "hardcoded-lint",
  "serde",
  "tmux-fmt",
  "toml",
