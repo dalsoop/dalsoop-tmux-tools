@@ -104,7 +104,7 @@ pub fn register_host_key(host: &str) -> bool {
         .output();
     match output {
         Ok(o) if !o.stdout.is_empty() => {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into()); // LINT_ALLOW: last-resort fallback when $HOME is unset
             let known_hosts = std::path::PathBuf::from(home).join(".ssh/known_hosts");
             std::fs::OpenOptions::new()
                 .create(true)

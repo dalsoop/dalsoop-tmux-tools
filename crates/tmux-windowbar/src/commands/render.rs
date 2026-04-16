@@ -209,7 +209,7 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
     let th = &config.theme;
     let view_user = get_view_user();
 
-    let current_user = std::env::var("USER").unwrap_or_else(|_| "root".into());
+    let current_user = std::env::var("USER").unwrap_or_else(|_| "root".into()); // LINT_ALLOW: last-resort fallback when USER is unset
 
     let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
     let mut users: Vec<&str> = Vec::new();

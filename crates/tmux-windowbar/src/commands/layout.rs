@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tmux_fmt::tmux;
 
 fn layout_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into()); // LINT_ALLOW: last-resort fallback when HOME is unset
     PathBuf::from(home).join(".config/tmux-windowbar/layouts")
 }
 
