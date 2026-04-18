@@ -145,11 +145,9 @@ fn get_system_stats(th: &ThemeConfig) -> String {
     }
     let used_gb = (total_kb - avail_kb) as f64 / 1048576.0;
     let total_gb = total_kb as f64 / 1048576.0;
-    let mem_pct = if total_kb > 0 {
-        (total_kb - avail_kb) * 100 / total_kb
-    } else {
-        0
-    };
+    let mem_pct = ((total_kb - avail_kb) * 100)
+        .checked_div(total_kb)
+        .unwrap_or(0);
 
     let mem_color = if mem_pct > 80 {
         &th.mem_critical

@@ -14,6 +14,11 @@ pub fn generate(config: &Config, _binary_path: &str) -> String {
     out.push_str("setw -g pane-base-index 1\n");
     out.push_str("set -g renumber-windows on\n");
     out.push_str("set -g escape-time 0\n");
+    // When a session is destroyed (e.g. killing its last window/pane via the
+    // window/session bar X button), switch the client to the next session
+    // instead of detaching. Keeps the user inside tmux as long as any
+    // session remains.
+    out.push_str("set -g detach-on-destroy off\n");
     out.push_str(&format!(
         "set -g history-limit {}\n\n",
         config.general.history_limit
@@ -288,6 +293,233 @@ mod tests {
         let out = make(&default_config());
         assert!(out.contains("#H"), "hostname block should contain #H");
         assert!(out.contains("%H:%M"), "datetime block should contain %H:%M");
+    }
+
+    // ── detach-on-destroy defensive suite ─────────────────────────────────
+    //
+    // Closing the last window or last pane via the bar X button destroys the
+    // enclosing session. tmux's default (`detach-on-destroy on`) detaches the
+    // client when that happens — kicking the user fully out of tmux. We emit
+    // `set -g detach-on-destroy off` so tmux switches to another session
+    // instead. These tests lock that behavior in against regressions.
+
+    /// Helper: count exact-line occurrences in generated output.
+    fn count_lines(haystack: &str, needle: &str) -> usize {
+        haystack.lines().filter(|l| l.trim() == needle).count()
+    }
+
+    #[test]
+    fn detach_on_destroy_off_is_emitted() {
+        let out = make(&default_config());
+        assert!(
+            out.contains("set -g detach-on-destroy off"),
+            "generated tmux.conf must set detach-on-destroy off so killing the \
+             last window/pane switches session instead of detaching the client;\n\
+             got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn detach_on_destroy_value_is_off_not_on() {
+        let out = make(&default_config());
+        // `contains` is substring-based, so an accidental "detach-on-destroy on"
+        // would not be caught by the positive test above. Assert explicitly.
+        assert!(
+            !out.contains("set -g detach-on-destroy on"),
+            "must not emit `detach-on-destroy on` — that reverts to the \
+             tmux default and kicks users out on last-window kill"
+        );
+        for alt in ["no-detached", "\"off\"", "'off'"] {
+            assert!(
+                !out.contains(&format!("set -g detach-on-destroy {alt}")),
+                "unexpected detach-on-destroy value `{alt}` in output"
+            );
+        }
+    }
+
+    #[test]
+    fn detach_on_destroy_emitted_exactly_once() {
+        let out = make(&default_config());
+        let n = count_lines(&out, "set -g detach-on-destroy off");
+        assert_eq!(
+            n, 1,
+            "detach-on-destroy should appear exactly once, got {n} occurrences;\n\
+             duplicates indicate a merge/copy-paste regression in generate()"
+        );
+    }
+
+    #[test]
+    fn detach_on_destroy_is_global_not_window_local() {
+        let out = make(&default_config());
+        // tmux accepts `setw -g detach-on-destroy` silently for unknown scope
+        // but the correct scope is session-level via `set -g`.
+        assert!(
+            !out.contains("setw -g detach-on-destroy"),
+            "detach-on-destroy is a session option — must use `set -g`, not `setw`"
+        );
+        assert!(
+            !out.contains("set-option -w detach-on-destroy"),
+            "detach-on-destroy is a session option — window scope is wrong"
+        );
+    }
+
+    #[test]
+    fn detach_on_destroy_lives_in_general_section() {
+        let out = make(&default_config());
+        let general_marker = out
+            .find("# --- General ---")
+            .expect("General section header must exist");
+        let statusbar_marker = out
+            .find("# --- Status bar ---")
+            .expect("Status bar section header must exist");
+        let detach_pos = out
+            .find("set -g detach-on-destroy off")
+            .expect("detach-on-destroy line must exist");
+        assert!(
+            detach_pos > general_marker && detach_pos < statusbar_marker,
+            "detach-on-destroy must live inside the General section \
+             (between General header at {general_marker} and Status bar \
+             header at {statusbar_marker}); found at {detach_pos}"
+        );
+    }
+
+    #[test]
+    fn detach_on_destroy_applied_before_plugins() {
+        // tmux-resurrect restores sessions on startup. The detach-on-destroy
+        // setting must be applied *before* plugins run so the behavior is
+        // in effect immediately after restore.
+        let out = make(&default_config());
+        let detach_pos = out
+            .find("set -g detach-on-destroy off")
+            .expect("detach-on-destroy line must exist");
+        let plugin_marker = out
+            .find("# --- Plugins (TPM) ---")
+            .expect("Plugins section must exist");
+        let tpm_init = out
+            .find("run '~/.tmux/plugins/tpm/tpm'")
+            .expect("TPM init line must exist");
+        assert!(
+            detach_pos < plugin_marker,
+            "detach-on-destroy must be set before plugin declarations"
+        );
+        assert!(
+            detach_pos < tpm_init,
+            "detach-on-destroy must be set before TPM init so restored \
+             sessions inherit the option"
+        );
+    }
+
+    #[test]
+    fn detach_on_destroy_survives_custom_toml_config() {
+        // Same user-supplied TOML as the existing config_roundtrip test.
+        // Verify that *user* config cannot accidentally strip the
+        // detach-on-destroy guarantee — it is hardcoded in generate().
+        let toml_str = concat!(
+            "[general]\n",
+            "history_limit = 10000\n",
+            "\n",
+            "[status]\n",
+            "interval = 5\n",
+            "position = \"bottom\"\n",
+            "bg = \"#000000\"\n",
+            "fg = \"#ffffff\"\n",
+            "\n",
+            "[status.left]\n",
+            "blocks = [\"session-list\"]\n",
+            "length = 200\n",
+            "\n",
+            "[status.right]\n",
+            "blocks = [\"hostname\"]\n",
+            "length = 40\n",
+            "\n",
+            "[blocks.session-list]\n",
+            "active_fg = \"#000\"\n",
+            "active_bg = \"#fff\"\n",
+            "inactive_fg = \"#aaa\"\n",
+            "inactive_bg = \"#333\"\n",
+            "separator = \"|\"\n",
+            "show_new_button = false\n",
+            "show_kill_button = false\n",
+            "button_fg = \"#000\"\n",
+            "button_bg = \"#fff\"\n",
+            "kill_bg = \"#f00\"\n",
+            "\n",
+            "[blocks.hostname]\n",
+            "fg = \"#000\"\n",
+            "bg = \"#0ff\"\n",
+            "format = \" HOST \"\n",
+            "\n",
+            "[keybindings]\n",
+            "session_switch = false\n",
+            "pane_clear = false\n",
+        );
+        let config: Config = toml::from_str(toml_str).expect("valid toml");
+        let out = make(&config);
+        assert!(
+            out.contains("set -g detach-on-destroy off"),
+            "user TOML must never suppress detach-on-destroy off"
+        );
+    }
+
+    #[test]
+    fn detach_on_destroy_stable_across_plugin_toggles() {
+        // Disabling plugins must not remove the detach-on-destroy line.
+        let mut config = default_config();
+        config.plugins.iter_mut().for_each(|p| {
+            p.enabled = Some(false);
+        });
+        let out = make(&config);
+        assert!(
+            out.contains("set -g detach-on-destroy off"),
+            "detach-on-destroy must survive even with all plugins disabled"
+        );
+    }
+
+    #[test]
+    fn detach_on_destroy_stable_across_keybinding_toggles() {
+        let mut config = default_config();
+        config.keybindings.session_switch = false;
+        config.keybindings.pane_clear = false;
+        let out = make(&config);
+        assert!(
+            out.contains("set -g detach-on-destroy off"),
+            "detach-on-destroy must survive keybinding toggles"
+        );
+    }
+
+    #[test]
+    fn detach_on_destroy_line_is_well_formed() {
+        // Guard against subtle typos in the literal string (dashes, spacing,
+        // quoting). tmux silently ignores unknown options and would leave the
+        // default `on` in effect — a silent regression we must not ship.
+        let out = make(&default_config());
+        let line = out
+            .lines()
+            .find(|l| l.contains("detach-on-destroy"))
+            .expect("detach-on-destroy line must exist");
+        assert_eq!(
+            line.trim(),
+            "set -g detach-on-destroy off",
+            "line must be the exact literal tmux expects; any deviation \
+             (extra quotes, wrong dashes, stray whitespace) will be parsed \
+             as an unknown option and silently ignored by tmux"
+        );
+    }
+
+    #[test]
+    fn detach_on_destroy_not_inside_comment() {
+        // Make sure no future refactor accidentally moves the setting onto
+        // a commented-out line.
+        let out = make(&default_config());
+        for line in out.lines() {
+            if line.contains("detach-on-destroy") {
+                let trimmed = line.trim_start();
+                assert!(
+                    !trimmed.starts_with('#'),
+                    "detach-on-destroy must not live on a comment line:\n  {line}"
+                );
+            }
+        }
     }
 
     #[test]
