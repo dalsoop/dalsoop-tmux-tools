@@ -1,6 +1,6 @@
 [package]
 name = "tmux-config"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 # auto-discover 로 crate name 과 동일한 bin 이 생성되는 걸 방지 — [[bin]] 만 존중.
 autobins = false
