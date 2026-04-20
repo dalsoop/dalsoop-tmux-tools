@@ -7,7 +7,7 @@ use ratatui::{
 use crate::{
     App, Mode,
     BG, FG, GREEN, BLUE, RED, SUBTLE, BORDER,
-    apps, dal, proxmox, seed, ssh, tabs,
+    apps, proxmox, seed, ssh, tabs,
 };
 use tabs::Tab;
 
@@ -114,7 +114,6 @@ pub(crate) fn render_body(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
 pub(crate) fn render_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
     match app.tab {
         Tab::Proxmox => render_proxmox_list(f, app, area),
-        Tab::Dal => render_dal_list(f, app, area),
         _ => render_standard_list(f, app, area),
     }
 }
@@ -148,7 +147,7 @@ pub(crate) fn render_standard_list(f: &mut ratatui::Frame, app: &mut App, area: 
                 .collect();
             ("Settings", items, &mut app.settings)
         }
-        Tab::Proxmox | Tab::Dal => unreachable!(),
+        Tab::Proxmox => unreachable!(),
     };
 
     let list = List::new(items)
@@ -233,66 +232,6 @@ pub(crate) fn render_proxmox_list(f: &mut ratatui::Frame, app: &mut App, area: R
         .highlight_symbol("> ");
 
     f.render_stateful_widget(list, area, &mut render_state);
-}
-
-pub(crate) fn render_dal_list(f: &mut ratatui::Frame, app: &mut App, area: Rect) {
-    let yellow = Color::Rgb(229, 192, 123);
-
-    let tester_status = if app.dal.tester_alive { "●" } else { "○" };
-    let running = app.dal.count_running();
-    let running_str = if running > 0 { format!("  {running} running") } else { String::new() };
-    let summary = format!(
-        " Dal {tester_status} — {} pending{running_str}  {} passed  {} failed ",
-        app.dal.count_pending(),
-        app.dal.count_passed(),
-        app.dal.count_failed(),
-    );
-
-    let items: Vec<ListItem> = app.dal.queue.iter().map(|t| {
-        let (icon, color) = match t.status {
-            dal::TestStatus::Pending  => ("○", SUBTLE),
-            dal::TestStatus::Running  => ("◉", yellow),
-            dal::TestStatus::Passed   => ("✓", GREEN),
-            dal::TestStatus::Failed   => ("✗", RED),
-        };
-        let duration = if t.duration_ms > 0 {
-            format!(" ({:.1}s)", t.duration_ms as f64 / 1000.0)
-        } else if t.status == dal::TestStatus::Running {
-            if let Some(start) = t.submitted_at {
-                format!(" ({:.0}s...)", start.elapsed().as_secs_f64())
-            } else {
-                " (...)".into()
-            }
-        } else {
-            String::new()
-        };
-        ListItem::new(Line::from(vec![
-            Span::styled(format!("  {icon} "), Style::default().fg(color)),
-            Span::styled(format!("{:<24}", t.label), Style::default().fg(FG)),
-            Span::styled(&t.trigger, Style::default().fg(SUBTLE)),
-            Span::styled(duration, Style::default().fg(SUBTLE)),
-        ]))
-    }).collect();
-
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .title(Span::styled(summary, Style::default().fg(GREEN)))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(BORDER))
-                .style(Style::default().bg(BG)),
-        )
-        .style(Style::default().fg(FG).bg(BG))
-        .highlight_style(
-            Style::default()
-                .fg(BLUE)
-                .bg(Color::Rgb(58, 63, 76))
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("> ");
-
-    f.render_stateful_widget(list, area, &mut app.dal_list.state);
 }
 
 pub(crate) fn render_form(f: &mut ratatui::Frame, app: &App, area: Rect) {
@@ -415,17 +354,6 @@ pub(crate) fn render_hint(f: &mut ratatui::Frame, app: &App, area: Rect) {
                         Span::styled("[q]", Style::default().fg(SUBTLE)), Span::raw("uit"),
                     ]);
                     Line::from(spans)
-                } else if app.tab == Tab::Dal {
-                    Line::from(vec![
-                        Span::styled("[w]", Style::default().fg(GREEN)), Span::raw("ake  "),
-                        Span::styled("[W]", Style::default().fg(RED)), Span::raw(" sleep  "),
-                        Span::styled("[s]", Style::default().fg(BLUE)), Span::raw("can  "),
-                        Span::styled("[r/Enter]", Style::default().fg(GREEN)), Span::raw(" submit  "),
-                        Span::styled("[a]", Style::default().fg(BLUE)), Span::raw("ll  "),
-                        Span::styled("[A]", Style::default().fg(BLUE)), Span::raw("ll+run  "),
-                        Span::styled("[c]", Style::default().fg(SUBTLE)), Span::raw("lear  "),
-                        Span::styled("[q]", Style::default().fg(SUBTLE)), Span::raw("uit"),
-                    ])
                 } else {
                     let mut spans = vec![
                         Span::styled("[a]", Style::default().fg(BLUE)), Span::raw("dd  "),

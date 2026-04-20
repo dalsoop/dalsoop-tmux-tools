@@ -11,7 +11,6 @@ pub enum Tab {
     Ssh,
     Apps,
     Proxmox,
-    Dal,
     Settings,
 }
 
@@ -26,9 +25,6 @@ impl Tab {
             Tab::Apps     => 1,
             Tab::Proxmox  => 2,
             Tab::Settings => 3,
-            // Dal 은 UI 에서 숨김 — 순환/선택 대상에서 제외 (enum variant 는
-            // 다른 모듈이 참조하고 있어 유지).
-            Tab::Dal      => usize::MAX,
         }
     }
 
