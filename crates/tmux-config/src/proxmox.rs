@@ -404,6 +404,17 @@ pub trait ProxmoxClient {
     fn stop(&self, c: &Container);
     /// 로컬에서 대화형으로 띄울 명령. API-only 같이 불가능하면 `None`.
     fn console(&self, c: &Container) -> Option<String>;
+
+    // ── 이하 default impl: API-only 서버는 전부 "지원 안 함" 을 반환 ──
+
+    fn host_info(&self) -> Option<HostInfo> { None }
+    fn resources(&self, _c: &Container) -> Option<Resources> { None }
+    fn docker(&self, _vmid: u32) -> Vec<DockerContainer> { Vec::new() }
+    fn ports(&self, _vmid: u32) -> Vec<PortInfo> { Vec::new() }
+    fn snapshots(&self, _c: &Container) -> Vec<Snapshot> { Vec::new() }
+    fn docker_logs_cmd(&self, _vmid: u32, _container: &str) -> Option<String> { None }
+    fn container_logs_cmd(&self, _c: &Container) -> Option<String> { None }
+    fn docker_exec_cmd(&self, _vmid: u32, _container: &str) -> Option<String> { None }
 }
 
 struct SshProxmoxClient<'a> {
@@ -411,6 +422,12 @@ struct SshProxmoxClient<'a> {
 }
 struct ApiProxmoxClient<'a> {
     server: &'a ProxmoxServer,
+}
+
+impl SshProxmoxClient<'_> {
+    fn run(&self, cmd: &str) -> Option<String> {
+        ssh_run(&self.server.user, &self.server.host, cmd)
+    }
 }
 
 impl ProxmoxClient for SshProxmoxClient<'_> {
@@ -423,7 +440,7 @@ impl ProxmoxClient for SshProxmoxClient<'_> {
         } else {
             format!("pct start {}", c.vmid)
         };
-        let _ = ssh_run(&self.server.user, &self.server.host, &cmd);
+        let _ = self.run(&cmd);
     }
     fn stop(&self, c: &Container) {
         let cmd = if c.kind == "vm" {
@@ -431,7 +448,7 @@ impl ProxmoxClient for SshProxmoxClient<'_> {
         } else {
             format!("pct stop {}", c.vmid)
         };
-        let _ = ssh_run(&self.server.user, &self.server.host, &cmd);
+        let _ = self.run(&cmd);
     }
     fn console(&self, c: &Container) -> Option<String> {
         let enter = if c.kind == "vm" {
@@ -440,6 +457,71 @@ impl ProxmoxClient for SshProxmoxClient<'_> {
             format!("pct enter {}", c.vmid)
         };
         Some(remote_or_local(&self.server.user, &self.server.host, &enter))
+    }
+
+    fn host_info(&self) -> Option<HostInfo> {
+        let cmd = r#"echo "hostname:$(hostname)" && echo "kernel:$(uname -r)" && echo "cpu:$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs)" && echo "cores:$(nproc)" && echo "mem:$(free -m | awk '/Mem/{print $3"/"$2"MB"}')" && echo "uptime:$(uptime -p 2>/dev/null || uptime)" && echo "load:$(cat /proc/loadavg | awk '{print $1,$2,$3}')" && echo "pve:$(pveversion 2>/dev/null || echo '-')"
+"#;
+        let out = self.run(cmd)?;
+        Some(parse_host_info(&out))
+    }
+
+    fn resources(&self, c: &Container) -> Option<Resources> {
+        let kind = if c.kind == "vm" { "qm" } else { "pct" };
+        let cmd = format!(
+            r#"{kind} status {vmid} 2>/dev/null && {kind} config {vmid} 2>/dev/null | grep -E '^(cores|memory|rootfs|net)'"#,
+            vmid = c.vmid
+        );
+        let out = self.run(&cmd)?;
+        let mut res = parse_resources(&out);
+        if c.kind == "lxc" {
+            if let Some(ip_out) = self.run(&format!("pct exec {} -- hostname -I 2>/dev/null", c.vmid)) {
+                res.ip = ip_out.split_whitespace().next().unwrap_or("-").to_string();
+            }
+        }
+        Some(res)
+    }
+
+    fn docker(&self, vmid: u32) -> Vec<DockerContainer> {
+        let cmd = format!(
+            "pct exec {vmid} -- docker ps --format '{{{{.Names}}}}\\t{{{{.Image}}}}\\t{{{{.Status}}}}\\t{{{{.Ports}}}}' 2>/dev/null"
+        );
+        self.run(&cmd).map(|o| parse_docker(&o)).unwrap_or_default()
+    }
+
+    fn ports(&self, vmid: u32) -> Vec<PortInfo> {
+        let cmd = format!("pct exec {vmid} -- ss -tlnp 2>/dev/null | tail -n+2");
+        self.run(&cmd).map(|o| parse_ports(&o)).unwrap_or_default()
+    }
+
+    fn snapshots(&self, c: &Container) -> Vec<Snapshot> {
+        let kind = if c.kind == "vm" { "qm" } else { "pct" };
+        let cmd = format!("{kind} listsnapshot {} 2>/dev/null", c.vmid);
+        self.run(&cmd).map(|o| parse_snapshots(&o)).unwrap_or_default()
+    }
+
+    fn docker_logs_cmd(&self, vmid: u32, container: &str) -> Option<String> {
+        let inner = format!("pct exec {vmid} -- docker logs -f --tail 100 {container}");
+        Some(remote_or_local(&self.server.user, &self.server.host, &inner))
+    }
+
+    fn container_logs_cmd(&self, c: &Container) -> Option<String> {
+        let inner = if c.kind == "vm" {
+            format!("qm terminal {}", c.vmid)
+        } else {
+            format!(
+                "pct exec {} -- sh -c 'journalctl -f -n 100 2>/dev/null || tail -f /var/log/syslog 2>/dev/null || tail -f /var/log/messages'",
+                c.vmid
+            )
+        };
+        Some(remote_or_local(&self.server.user, &self.server.host, &inner))
+    }
+
+    fn docker_exec_cmd(&self, vmid: u32, container: &str) -> Option<String> {
+        let inner = format!(
+            "pct exec {vmid} -- docker exec -it {container} sh -c 'bash 2>/dev/null || sh'"
+        );
+        Some(remote_or_local(&self.server.user, &self.server.host, &inner))
     }
 }
 
@@ -535,16 +617,8 @@ fn ssh_fetch_containers(server: &ProxmoxServer) -> Vec<Container> {
     result
 }
 
-pub fn fetch_docker(server: &ProxmoxServer, vmid: u32) -> Vec<DockerContainer> {
-    if server.access == AccessType::Api { return Vec::new(); }
-    let cmd = format!(
-        "pct exec {vmid} -- docker ps --format '{{{{.Names}}}}\\t{{{{.Image}}}}\\t{{{{.Status}}}}\\t{{{{.Ports}}}}' 2>/dev/null"
-    );
-    let out = match ssh_run(&server.user, &server.host, &cmd) {
-        Some(o) => o,
-        None => return Vec::new(),
-    };
-
+/// `docker ps --format 'Names\tImage\tStatus\tPorts'` 출력을 파싱.
+fn parse_docker(out: &str) -> Vec<DockerContainer> {
     out.lines()
         .filter(|l| !l.is_empty())
         .map(|l| {
@@ -598,16 +672,8 @@ fn guess_protocol(port: u16, process: &str) -> String {
     }
 }
 
-pub fn fetch_ports(server: &ProxmoxServer, vmid: u32) -> Vec<PortInfo> {
-    if server.access == AccessType::Api { return Vec::new(); }
-    let cmd = format!(
-        "pct exec {vmid} -- ss -tlnp 2>/dev/null | tail -n+2"
-    );
-    let out = match ssh_run(&server.user, &server.host, &cmd) {
-        Some(o) => o,
-        None => return Vec::new(),
-    };
-
+/// `ss -tlnp | tail -n+2` 출력 파싱.
+fn parse_ports(out: &str) -> Vec<PortInfo> {
     out.lines()
         .filter(|l| !l.is_empty())
         .filter_map(|l| {
@@ -655,29 +721,22 @@ pub fn console_cmd(server: &ProxmoxServer, c: &Container) -> Option<String> {
 // ── Detail fetch (combined) ──
 
 pub fn fetch_detail(server: &ProxmoxServer, c: &Container) -> DetailInfo {
+    let client = client_for(server);
     DetailInfo {
-        resources: fetch_resources(server, c),
-        docker: fetch_docker(server, c.vmid),
-        ports: fetch_ports(server, c.vmid),
-        snapshots: fetch_snapshots(server, c),
+        resources: client.resources(c),
+        docker: client.docker(c.vmid),
+        ports: client.ports(c.vmid),
+        snapshots: client.snapshots(c),
     }
 }
 
-fn fetch_resources(server: &ProxmoxServer, c: &Container) -> Option<Resources> {
-    if server.access == AccessType::Api { return None; }
-    let kind = if c.kind == "vm" { "qm" } else { "pct" };
-    let cmd = format!(
-        r#"{kind} status {vmid} 2>/dev/null && {kind} config {vmid} 2>/dev/null | grep -E '^(cores|memory|rootfs|net)'"#,
-        vmid = c.vmid
-    );
-    let out = ssh_run(&server.user, &server.host, &cmd)?;
-
+/// `qm/pct status + config` 혼합 출력 파싱. IP 는 별도 호출에서 주입.
+fn parse_resources(out: &str) -> Resources {
     let mut cpus = "?".to_string();
     let mut mem_total = "?".to_string();
     let mut disk_total = "?".to_string();
     let mut mem_used = "?".to_string();
     let mut uptime = "?".to_string();
-    let mut ip = "-".to_string();
 
     for line in out.lines() {
         if line.starts_with("cores:") {
@@ -706,26 +765,15 @@ fn fetch_resources(server: &ProxmoxServer, c: &Container) -> Option<Resources> {
         }
     }
 
-    // Get IP
-    if c.kind == "lxc" {
-        if let Some(ip_out) = ssh_run(&server.user, &server.host,
-            &format!("pct exec {} -- hostname -I 2>/dev/null", c.vmid))
-        {
-            ip = ip_out.split_whitespace().next().unwrap_or("-").to_string();
-        }
+    Resources {
+        cpus, mem_used, mem_total,
+        _disk_used: "-".into(), disk_total, uptime,
+        ip: "-".into(),
     }
-
-    Some(Resources { cpus, mem_used, mem_total, _disk_used: "-".into(), disk_total, uptime, ip })
 }
 
-fn fetch_snapshots(server: &ProxmoxServer, c: &Container) -> Vec<Snapshot> {
-    if server.access == AccessType::Api { return Vec::new(); }
-    let kind = if c.kind == "vm" { "qm" } else { "pct" };
-    let cmd = format!("{kind} listsnapshot {} 2>/dev/null", c.vmid);
-    let out = match ssh_run(&server.user, &server.host, &cmd) {
-        Some(o) => o,
-        None => return Vec::new(),
-    };
+/// `pct/qm listsnapshot` 출력에서 (name, date) 뽑기.
+fn parse_snapshots(out: &str) -> Vec<Snapshot> {
     out.lines()
         .filter(|l| !l.trim().is_empty() && !l.contains("current"))
         .map(|l| {
@@ -759,10 +807,13 @@ pub fn fetch_host_info(server: &ProxmoxServer) -> Option<HostInfo> {
     if let Some(hit) = host_info_cache().get(&key) {
         return Some(hit);
     }
+    let info = client_for(server).host_info()?;
+    host_info_cache().put(key, info.clone());
+    Some(info)
+}
 
-    let cmd = r#"echo "hostname:$(hostname)" && echo "kernel:$(uname -r)" && echo "cpu:$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs)" && echo "cores:$(nproc)" && echo "mem:$(free -m | awk '/Mem/{print $3"/"$2"MB"}')" && echo "uptime:$(uptime -p 2>/dev/null || uptime)" && echo "load:$(cat /proc/loadavg | awk '{print $1,$2,$3}')" && echo "pve:$(pveversion 2>/dev/null || echo '-')"
-"#;
-    let out = ssh_run(&server.user, &server.host, cmd)?;
+/// `hostname/kernel/...:<value>` 한 줄씩 붙은 출력을 구조체로.
+fn parse_host_info(out: &str) -> HostInfo {
     let mut info = HostInfo {
         hostname: String::new(), kernel: String::new(), cpu_model: String::new(),
         cpu_cores: String::new(), mem_used: String::new(), mem_total: String::new(),
@@ -788,9 +839,7 @@ pub fn fetch_host_info(server: &ProxmoxServer) -> Option<HostInfo> {
             }
         }
     }
-
-    host_info_cache().put(key, info.clone());
-    Some(info)
+    info
 }
 
 pub fn display_host_info(info: &HostInfo) -> Vec<Line<'static>> {
@@ -920,34 +969,19 @@ pub fn docker_restart(server: &ProxmoxServer, vmid: u32, container: &str) -> boo
     ssh_run(&server.user, &server.host, &cmd).is_some()
 }
 
-/// Returns a tmux command to tail docker logs.
+/// Returns a tmux command to tail docker logs. API-only 서버면 빈 문자열.
 pub fn docker_logs_cmd(server: &ProxmoxServer, vmid: u32, container: &str) -> String {
-    let inner = format!("pct exec {vmid} -- docker logs -f --tail 100 {container}");
-    remote_or_local(&server.user, &server.host, &inner)
+    client_for(server).docker_logs_cmd(vmid, container).unwrap_or_default()
 }
 
 /// Returns a tmux command to tail container system logs.
 pub fn container_logs_cmd(server: &ProxmoxServer, c: &Container) -> Option<String> {
-    if server.access == AccessType::Api { return None; }
-    let inner = if c.kind == "vm" {
-        // VM: serial console log
-        format!("qm terminal {}", c.vmid)
-    } else {
-        // LXC: journalctl or syslog
-        format!(
-            "pct exec {} -- sh -c 'journalctl -f -n 100 2>/dev/null || tail -f /var/log/syslog 2>/dev/null || tail -f /var/log/messages'",
-            c.vmid
-        )
-    };
-    Some(remote_or_local(&server.user, &server.host, &inner))
+    client_for(server).container_logs_cmd(c)
 }
 
-/// Returns a tmux command to exec into docker container.
+/// Returns a tmux command to exec into docker container. API-only 면 빈 문자열.
 pub fn docker_exec_cmd(server: &ProxmoxServer, vmid: u32, container: &str) -> String {
-    let inner = format!(
-        "pct exec {vmid} -- docker exec -it {container} sh -c 'bash 2>/dev/null || sh'"
-    );
-    remote_or_local(&server.user, &server.host, &inner)
+    client_for(server).docker_exec_cmd(vmid, container).unwrap_or_default()
 }
 
 // ── Display ──
