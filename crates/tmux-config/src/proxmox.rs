@@ -392,6 +392,92 @@ fn extract_json_str(text: &str, key: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
+// ── ProxmoxClient trait ──
+//
+// SSH/API 경로별로 반복되던 `match server.access` 분기를 trait 메서드로 대체.
+// 호출부는 변경 없이 (free fn 래퍼 유지), 내부에서 `client_for(server)` 로
+// 적절한 구현체를 선택한다.
+
+pub trait ProxmoxClient {
+    fn fetch_containers_raw(&self) -> Vec<Container>;
+    fn start(&self, c: &Container);
+    fn stop(&self, c: &Container);
+    /// 로컬에서 대화형으로 띄울 명령. API-only 같이 불가능하면 `None`.
+    fn console(&self, c: &Container) -> Option<String>;
+}
+
+struct SshProxmoxClient<'a> {
+    server: &'a ProxmoxServer,
+}
+struct ApiProxmoxClient<'a> {
+    server: &'a ProxmoxServer,
+}
+
+impl ProxmoxClient for SshProxmoxClient<'_> {
+    fn fetch_containers_raw(&self) -> Vec<Container> {
+        ssh_fetch_containers(self.server)
+    }
+    fn start(&self, c: &Container) {
+        let cmd = if c.kind == "vm" {
+            format!("qm start {}", c.vmid)
+        } else {
+            format!("pct start {}", c.vmid)
+        };
+        let _ = ssh_run(&self.server.user, &self.server.host, &cmd);
+    }
+    fn stop(&self, c: &Container) {
+        let cmd = if c.kind == "vm" {
+            format!("qm stop {}", c.vmid)
+        } else {
+            format!("pct stop {}", c.vmid)
+        };
+        let _ = ssh_run(&self.server.user, &self.server.host, &cmd);
+    }
+    fn console(&self, c: &Container) -> Option<String> {
+        let enter = if c.kind == "vm" {
+            format!("qm terminal {}", c.vmid)
+        } else {
+            format!("pct enter {}", c.vmid)
+        };
+        Some(remote_or_local(&self.server.user, &self.server.host, &enter))
+    }
+}
+
+impl ProxmoxClient for ApiProxmoxClient<'_> {
+    fn fetch_containers_raw(&self) -> Vec<Container> {
+        api_fetch_containers(self.server)
+    }
+    fn start(&self, c: &Container) {
+        if let Some((ticket, csrf)) = api_get_ticket_and_csrf(self.server) {
+            if let Some(node) = api_get_node(self.server, &ticket) {
+                let res = if c.kind == "vm" { "qemu" } else { "lxc" };
+                api_post(self.server, &ticket, &csrf,
+                    &format!("/nodes/{node}/{res}/{}/status/start", c.vmid));
+            }
+        }
+    }
+    fn stop(&self, c: &Container) {
+        if let Some((ticket, csrf)) = api_get_ticket_and_csrf(self.server) {
+            if let Some(node) = api_get_node(self.server, &ticket) {
+                let res = if c.kind == "vm" { "qemu" } else { "lxc" };
+                api_post(self.server, &ticket, &csrf,
+                    &format!("/nodes/{node}/{res}/{}/status/stop", c.vmid));
+            }
+        }
+    }
+    /// API-only 서버는 콘솔 세션을 직접 제공할 수 없음.
+    fn console(&self, _c: &Container) -> Option<String> {
+        None
+    }
+}
+
+fn client_for(server: &ProxmoxServer) -> Box<dyn ProxmoxClient + '_> {
+    match server.access {
+        AccessType::Ssh => Box::new(SshProxmoxClient { server }),
+        AccessType::Api => Box::new(ApiProxmoxClient { server }),
+    }
+}
+
 // ── Fetch (dispatch) ──
 
 pub fn fetch_containers(server: &ProxmoxServer) -> Vec<Container> {
@@ -400,10 +486,7 @@ pub fn fetch_containers(server: &ProxmoxServer) -> Vec<Container> {
         return hit;
     }
 
-    let mut result = match server.access {
-        AccessType::Api => api_fetch_containers(server),
-        AccessType::Ssh => ssh_fetch_containers(server),
-    };
+    let mut result = client_for(server).fetch_containers_raw();
 
     // Sort: running first, then by vmid
     result.sort_by(|a, b| {
@@ -555,60 +638,18 @@ pub fn fetch_ports(server: &ProxmoxServer, vmid: u32) -> Vec<PortInfo> {
 // ── Actions ──
 
 pub fn start_container(server: &ProxmoxServer, c: &Container) {
-    match server.access {
-        AccessType::Ssh => {
-            let cmd = if c.kind == "vm" {
-                format!("qm start {}", c.vmid)
-            } else {
-                format!("pct start {}", c.vmid)
-            };
-            let _ = ssh_run(&server.user, &server.host, &cmd);
-        }
-        AccessType::Api => {
-            if let Some((ticket, csrf)) = api_get_ticket_and_csrf(server) {
-                if let Some(node) = api_get_node(server, &ticket) {
-                    let res = if c.kind == "vm" { "qemu" } else { "lxc" };
-                    api_post(server, &ticket, &csrf,
-                        &format!("/nodes/{node}/{res}/{}/status/start", c.vmid));
-                }
-            }
-        }
-    }
+    client_for(server).start(c);
     invalidate_containers(server);
 }
 
 pub fn stop_container(server: &ProxmoxServer, c: &Container) {
-    match server.access {
-        AccessType::Ssh => {
-            let cmd = if c.kind == "vm" {
-                format!("qm stop {}", c.vmid)
-            } else {
-                format!("pct stop {}", c.vmid)
-            };
-            let _ = ssh_run(&server.user, &server.host, &cmd);
-        }
-        AccessType::Api => {
-            if let Some((ticket, csrf)) = api_get_ticket_and_csrf(server) {
-                if let Some(node) = api_get_node(server, &ticket) {
-                    let res = if c.kind == "vm" { "qemu" } else { "lxc" };
-                    api_post(server, &ticket, &csrf,
-                        &format!("/nodes/{node}/{res}/{}/status/stop", c.vmid));
-                }
-            }
-        }
-    }
+    client_for(server).stop(c);
     invalidate_containers(server);
 }
 
 /// Console command. API-only servers can't do console — returns None.
 pub fn console_cmd(server: &ProxmoxServer, c: &Container) -> Option<String> {
-    if server.access == AccessType::Api { return None; }
-    let enter = if c.kind == "vm" {
-        format!("qm terminal {}", c.vmid)
-    } else {
-        format!("pct enter {}", c.vmid)
-    };
-    Some(remote_or_local(&server.user, &server.host, &enter))
+    client_for(server).console(c)
 }
 
 // ── Detail fetch (combined) ──
