@@ -70,7 +70,7 @@ pub struct DetailInfo {
 // ── Config helpers ──
 
 pub fn get_servers(config: &Config) -> Vec<ProxmoxServer> {
-    config
+    let mut servers: Vec<ProxmoxServer> = config
         .ssh
         .iter()
         .filter(|e| e.r#type == "proxmox" || e.r#type == "proxmox-api")
@@ -82,7 +82,52 @@ pub fn get_servers(config: &Config) -> Vec<ProxmoxServer> {
             password: e.password.clone(),
             port: e.port.unwrap_or(8006),
         })
-        .collect()
+        .collect();
+
+    // 로컬 Proxmox 노드가 등록돼 있으면 /etc/pve/corosync.conf 에서
+    // 클러스터 peer 를 자동 탐색해 목록에 붙인다. 이미 등록된 이름/호스트는 skip.
+    let local_idx = servers
+        .iter()
+        .position(|s| s.access == AccessType::Ssh && is_localhost(&s.host));
+    if let Some(idx) = local_idx {
+        if let Some(members) = cluster_members() {
+            let default_user = servers[idx].user.clone();
+            let default_port = servers[idx].port;
+            for (name, addr) in members {
+                if is_localhost(&addr) { continue; }
+                if servers.iter().any(|s| s.name == name || s.host == addr) { continue; }
+                servers.push(ProxmoxServer {
+                    name,
+                    host: addr,
+                    user: default_user.clone(),
+                    access: AccessType::Ssh,
+                    password: None,
+                    port: default_port,
+                });
+            }
+        }
+    }
+
+    servers
+}
+
+/// /etc/pve/corosync.conf 에서 클러스터 노드 `(name, ring0_addr)` 목록 추출.
+/// cluster_name 은 ring0_addr 가 뒤따르지 않아 자연스레 제외된다.
+fn cluster_members() -> Option<Vec<(String, String)>> {
+    let text = std::fs::read_to_string("/etc/pve/corosync.conf").ok()?;
+    let mut members = Vec::new();
+    let mut cur_name: Option<String> = None;
+    for line in text.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("name:") {
+            cur_name = Some(rest.trim().to_string());
+        } else if let Some(rest) = t.strip_prefix("ring0_addr:") {
+            if let Some(name) = cur_name.take() {
+                members.push((name, rest.trim().to_string()));
+            }
+        }
+    }
+    if members.is_empty() { None } else { Some(members) }
 }
 
 // ── SSH host key ──
