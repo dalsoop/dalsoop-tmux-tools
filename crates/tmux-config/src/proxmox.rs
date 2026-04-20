@@ -191,7 +191,7 @@ pub fn ensure_host_key(host: &str) -> bool {
 // ── SSH commands ──
 
 /// 호스트 문자열이 현재 머신(로컬)을 가리키는지 판정.
-/// 루프백·localhost·현재 hostname 이면 true.
+/// 루프백·localhost·현재 hostname·머신의 모든 로컬 IP 중 하나면 true.
 pub fn is_localhost(host: &str) -> bool {
     if matches!(host, "127.0.0.1" | "localhost" | "::1") {
         return true;
@@ -199,6 +199,14 @@ pub fn is_localhost(host: &str) -> bool {
     if let Ok(out) = Command::new("hostname").output() {
         if let Ok(s) = String::from_utf8(out.stdout) {
             if host == s.trim() {
+                return true;
+            }
+        }
+    }
+    // `hostname -I` 로 모든 네트워크 인터페이스 IP 확인 (자기 자신의 LAN IP 커버)
+    if let Ok(out) = Command::new("hostname").arg("-I").output() {
+        if let Ok(s) = String::from_utf8(out.stdout) {
+            if s.split_whitespace().any(|ip| ip == host) {
                 return true;
             }
         }
