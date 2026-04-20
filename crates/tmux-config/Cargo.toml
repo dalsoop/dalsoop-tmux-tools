@@ -2,6 +2,14 @@
 name = "tmux-config"
 version = "0.1.0"
 edition = "2021"
+# auto-discover 로 crate name 과 동일한 bin 이 생성되는 걸 방지 — [[bin]] 만 존중.
+autobins = false
+
+# 바이너리 산출물 이름을 호스트 네이밍(tmux-topbar)과 맞춤.
+# crate/package name 은 경로 호환을 위해 유지.
+[[bin]]
+name = "tmux-topbar"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"

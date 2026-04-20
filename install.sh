@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO="dalsoop/dalsoop-tmux-tools"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
-BINARIES="tmux-sessionbar tmux-windowbar tmux-config"
+BINARIES="tmux-sessionbar tmux-windowbar tmux-topbar"
 
 # Colors
 RED='\033[0;31m'
@@ -63,6 +63,12 @@ for bin in $BINARIES; do
         ok "$bin → $INSTALL_DIR/$bin"
     fi
 done
+
+# tmux-sessionbar init 가 내부에서 tmux-config 이름을 호출하므로 호환 심링크.
+if [ -f "$INSTALL_DIR/tmux-topbar" ]; then
+    ln -sf tmux-topbar "$INSTALL_DIR/tmux-config"
+    ok "tmux-config → tmux-topbar (compat symlink)"
+fi
 
 # Init configs if first install
 if [ ! -f "$HOME/.config/tmux-sessionbar/config.toml" ]; then

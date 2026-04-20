@@ -6,9 +6,9 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
     let cmd = args[0].as_str();
     match cmd {
         "help" | "--help" | "-h" => {
-            println!("tmux-config — tmux status bar configuration manager");
+            println!("tmux-topbar — tmux status bar configuration manager");
             println!();
-            println!("Usage: tmux-config [command]");
+            println!("Usage: tmux-topbar [command]");
             println!();
             println!("  (no args)              Open TUI");
             println!();
@@ -463,7 +463,7 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("Container {vmid} not found"))?;
 
             if ct.status == "running" {
-                anyhow::bail!("{} ({}) is running — stop it first with: tmux-config pve-stop {} {}", ct.name, vmid, args[1], vmid);
+                anyhow::bail!("{} ({}) is running — stop it first with: tmux-topbar pve-stop {} {}", ct.name, vmid, args[1], vmid);
             }
 
             println!("Deleting {} {} ({})...", ct.kind, vmid, ct.name);
@@ -568,7 +568,7 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
 
         _ => {
             eprintln!("Unknown command: {cmd}");
-            eprintln!("Run 'tmux-config help' for usage");
+            eprintln!("Run 'tmux-topbar help' for usage");
             std::process::exit(1);
         }
     }

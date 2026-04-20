@@ -33,10 +33,10 @@ jobs:
           mkdir -p dist
           cp target/release/tmux-sessionbar dist/
           cp target/release/tmux-windowbar dist/
-          cp target/release/tmux-config dist/
+          cp target/release/tmux-topbar dist/
           cp install.sh dist/
           cd dist
-          tar czf tmux-tools-x86_64-linux.tar.gz tmux-sessionbar tmux-windowbar tmux-config install.sh
+          tar czf tmux-tools-x86_64-linux.tar.gz tmux-sessionbar tmux-windowbar tmux-topbar install.sh
           sha256sum tmux-tools-x86_64-linux.tar.gz > SHA256SUMS
 
       - name: Create Release

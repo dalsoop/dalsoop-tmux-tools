@@ -2,7 +2,7 @@ use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -10,6 +10,7 @@ use tmux_windowbar::config::template::Config;
 
 const SSH_OPTS: [&str; 4] = ["-o", "ConnectTimeout=5", "-o", "BatchMode=yes"];
 const CONTAINER_CACHE_TTL: Duration = Duration::from_secs(10);
+const HOST_INFO_CACHE_TTL: Duration = Duration::from_secs(5);
 
 // ── Cache ──
 // fetch_containers 는 TUI 목록 화면이 반복 호출하는 가장 무거운 호출
@@ -31,6 +32,34 @@ fn invalidate_containers(server: &ProxmoxServer) {
     if let Ok(mut map) = container_cache().lock() {
         map.remove(&cache_key(server));
     }
+}
+
+// fetch_host_info 5s TTL 캐시 — host 탭의 CPU/mem/uptime 반복 렌더.
+type HostInfoCacheMap = HashMap<String, (Instant, HostInfo)>;
+
+fn host_info_cache() -> &'static Mutex<HostInfoCacheMap> {
+    static CACHE: OnceLock<Mutex<HostInfoCacheMap>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// is_localhost 결과를 프로세스 당 1회만 계산 (hostname / hostname -I fork 비용 제거).
+fn local_aliases() -> &'static HashSet<String> {
+    static ALIASES: OnceLock<HashSet<String>> = OnceLock::new();
+    ALIASES.get_or_init(|| {
+        let mut set: HashSet<String> = ["127.0.0.1", "localhost", "::1"]
+            .iter().map(|s| s.to_string()).collect();
+        if let Ok(out) = Command::new("hostname").output() {
+            if let Ok(s) = String::from_utf8(out.stdout) {
+                set.insert(s.trim().to_string());
+            }
+        }
+        if let Ok(out) = Command::new("hostname").arg("-I").output() {
+            if let Ok(s) = String::from_utf8(out.stdout) {
+                for ip in s.split_whitespace() { set.insert(ip.to_string()); }
+            }
+        }
+        set
+    })
 }
 
 // ── Data ──
@@ -141,6 +170,13 @@ pub fn get_servers(config: &Config) -> Vec<ProxmoxServer> {
 /// cluster_name 은 ring0_addr 가 뒤따르지 않아 자연스레 제외된다.
 fn cluster_members() -> Option<Vec<(String, String)>> {
     let text = std::fs::read_to_string("/etc/pve/corosync.conf").ok()?;
+    let m = parse_cluster_members(&text);
+    if m.is_empty() { None } else { Some(m) }
+}
+
+/// corosync.conf 본문에서 `(name, ring0_addr)` pair 를 순서대로 추출.
+/// `name:` 행 직후에 `ring0_addr:` 가 와야 한 쌍으로 기록됨.
+fn parse_cluster_members(text: &str) -> Vec<(String, String)> {
     let mut members = Vec::new();
     let mut cur_name: Option<String> = None;
     for line in text.lines() {
@@ -153,7 +189,7 @@ fn cluster_members() -> Option<Vec<(String, String)>> {
             }
         }
     }
-    if members.is_empty() { None } else { Some(members) }
+    members
 }
 
 // ── SSH host key ──
@@ -218,26 +254,9 @@ pub fn ensure_host_key(host: &str) -> bool {
 
 /// 호스트 문자열이 현재 머신(로컬)을 가리키는지 판정.
 /// 루프백·localhost·현재 hostname·머신의 모든 로컬 IP 중 하나면 true.
+/// 결과는 프로세스 당 1회 계산되어 `local_aliases()` 에 캐시됨.
 pub fn is_localhost(host: &str) -> bool {
-    if matches!(host, "127.0.0.1" | "localhost" | "::1") {
-        return true;
-    }
-    if let Ok(out) = Command::new("hostname").output() {
-        if let Ok(s) = String::from_utf8(out.stdout) {
-            if host == s.trim() {
-                return true;
-            }
-        }
-    }
-    // `hostname -I` 로 모든 네트워크 인터페이스 IP 확인 (자기 자신의 LAN IP 커버)
-    if let Ok(out) = Command::new("hostname").arg("-I").output() {
-        if let Ok(s) = String::from_utf8(out.stdout) {
-            if s.split_whitespace().any(|ip| ip == host) {
-                return true;
-            }
-        }
-    }
-    false
+    local_aliases().contains(host)
 }
 
 fn ssh_run(user: &str, host: &str, cmd: &str) -> Option<String> {
@@ -742,6 +761,15 @@ pub struct HostInfo {
 }
 
 pub fn fetch_host_info(server: &ProxmoxServer) -> Option<HostInfo> {
+    let key = cache_key(server);
+    if let Ok(map) = host_info_cache().lock() {
+        if let Some((at, data)) = map.get(&key) {
+            if at.elapsed() < HOST_INFO_CACHE_TTL {
+                return Some(data.clone());
+            }
+        }
+    }
+
     let cmd = r#"echo "hostname:$(hostname)" && echo "kernel:$(uname -r)" && echo "cpu:$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs)" && echo "cores:$(nproc)" && echo "mem:$(free -m | awk '/Mem/{print $3"/"$2"MB"}')" && echo "uptime:$(uptime -p 2>/dev/null || uptime)" && echo "load:$(cat /proc/loadavg | awk '{print $1,$2,$3}')" && echo "pve:$(pveversion 2>/dev/null || echo '-')"
 "#;
     let out = ssh_run(&server.user, &server.host, cmd)?;
@@ -769,6 +797,10 @@ pub fn fetch_host_info(server: &ProxmoxServer) -> Option<HostInfo> {
                 _ => {}
             }
         }
+    }
+
+    if let Ok(mut map) = host_info_cache().lock() {
+        map.insert(key, (Instant::now(), info.clone()));
     }
     Some(info)
 }
@@ -1176,5 +1208,63 @@ mod tests {
             kind: "vm".into(),
         };
         assert!(console_cmd(&s, &c).unwrap().contains("qm terminal 100"));
+    }
+
+    #[test]
+    fn console_cmd_localhost_strips_ssh() {
+        let s = ProxmoxServer {
+            name: "local".into(),
+            host: "127.0.0.1".into(),
+            user: "root".into(),
+            access: AccessType::Ssh,
+            password: None,
+            port: 8006,
+        };
+        let c = Container {
+            vmid: 200, name: "n".into(), status: "running".into(), kind: "lxc".into(),
+        };
+        let cmd = console_cmd(&s, &c).unwrap();
+        assert!(!cmd.starts_with("ssh "), "localhost must not use ssh wrapper: {cmd}");
+        assert!(cmd.contains("pct enter 200"));
+    }
+
+    #[test]
+    fn is_localhost_static_aliases() {
+        assert!(is_localhost("127.0.0.1"));
+        assert!(is_localhost("localhost"));
+        assert!(is_localhost("::1"));
+        assert!(!is_localhost("192.0.2.99")); // TEST-NET-1 (RFC 5737) — 절대 로컬 아님
+    }
+
+    #[test]
+    fn parse_cluster_members_basic() {
+        let sample = r#"
+totem {
+  cluster_name: dalcluster
+}
+nodelist {
+  node {
+    name: pve
+    nodeid: 1
+    ring0_addr: 192.168.2.50
+  }
+  node {
+    name: ranode-3960x
+    nodeid: 2
+    ring0_addr: 192.168.2.60
+  }
+}
+"#;
+        let members = parse_cluster_members(sample);
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0], ("pve".into(), "192.168.2.50".into()));
+        assert_eq!(members[1], ("ranode-3960x".into(), "192.168.2.60".into()));
+    }
+
+    #[test]
+    fn parse_cluster_members_skips_lone_cluster_name() {
+        // cluster_name 뒤에는 ring0_addr 가 안 와 skip 되어야 함
+        let sample = "totem {\n  cluster_name: dal\n}\n";
+        assert!(parse_cluster_members(sample).is_empty());
     }
 }
