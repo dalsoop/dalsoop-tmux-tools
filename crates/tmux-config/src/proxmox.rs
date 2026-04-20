@@ -16,8 +16,10 @@ const CONTAINER_CACHE_TTL: Duration = Duration::from_secs(10);
 // (pct list + qm list 두 번의 sh/ssh 실행). 10초 TTL 로 wrap.
 // start_container / stop_container 직후 invalidate_containers() 로 무효화.
 
-fn container_cache() -> &'static Mutex<HashMap<String, (Instant, Vec<Container>)>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, Vec<Container>)>>> = OnceLock::new();
+type ContainerCacheMap = HashMap<String, (Instant, Vec<Container>)>;
+
+fn container_cache() -> &'static Mutex<ContainerCacheMap> {
+    static CACHE: OnceLock<Mutex<ContainerCacheMap>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
