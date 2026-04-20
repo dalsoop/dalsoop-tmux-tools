@@ -837,6 +837,7 @@ pub fn docker_exec_cmd(server: &ProxmoxServer, vmid: u32, container: &str) -> St
 
 pub fn display_server(s: &ProxmoxServer) -> Line<'static> {
     let tag = match s.access {
+        AccessType::Ssh if is_localhost(&s.host) => "local",
         AccessType::Ssh => "ssh",
         AccessType::Api => "api",
     };
