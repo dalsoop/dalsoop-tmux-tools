@@ -2,10 +2,34 @@ use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
 };
+use std::collections::HashMap;
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tmux_windowbar::config::template::Config;
 
 const SSH_OPTS: [&str; 4] = ["-o", "ConnectTimeout=5", "-o", "BatchMode=yes"];
+const CONTAINER_CACHE_TTL: Duration = Duration::from_secs(10);
+
+// ── Cache ──
+// fetch_containers 는 TUI 목록 화면이 반복 호출하는 가장 무거운 호출
+// (pct list + qm list 두 번의 sh/ssh 실행). 10초 TTL 로 wrap.
+// start_container / stop_container 직후 invalidate_containers() 로 무효화.
+
+fn container_cache() -> &'static Mutex<HashMap<String, (Instant, Vec<Container>)>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, Vec<Container>)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cache_key(server: &ProxmoxServer) -> String {
+    format!("{}@{}:{}", server.user, server.host, server.port)
+}
+
+fn invalidate_containers(server: &ProxmoxServer) {
+    if let Ok(mut map) = container_cache().lock() {
+        map.remove(&cache_key(server));
+    }
+}
 
 // ── Data ──
 
@@ -388,6 +412,16 @@ fn extract_json_str(text: &str, key: &str) -> Option<String> {
 // ── Fetch (dispatch) ──
 
 pub fn fetch_containers(server: &ProxmoxServer) -> Vec<Container> {
+    // 캐시 hit (TTL 내) 이면 바로 반환
+    let key = cache_key(server);
+    if let Ok(map) = container_cache().lock() {
+        if let Some((at, data)) = map.get(&key) {
+            if at.elapsed() < CONTAINER_CACHE_TTL {
+                return data.clone();
+            }
+        }
+    }
+
     let mut result = match server.access {
         AccessType::Api => api_fetch_containers(server),
         AccessType::Ssh => ssh_fetch_containers(server),
@@ -399,6 +433,12 @@ pub fn fetch_containers(server: &ProxmoxServer) -> Vec<Container> {
         let br = b.status == "running";
         br.cmp(&ar).then(a.vmid.cmp(&b.vmid))
     });
+
+    // 캐시 저장
+    if let Ok(mut map) = container_cache().lock() {
+        map.insert(key, (Instant::now(), result.clone()));
+    }
+
     result
 }
 
@@ -560,6 +600,7 @@ pub fn start_container(server: &ProxmoxServer, c: &Container) {
             }
         }
     }
+    invalidate_containers(server);
 }
 
 pub fn stop_container(server: &ProxmoxServer, c: &Container) {
@@ -582,6 +623,7 @@ pub fn stop_container(server: &ProxmoxServer, c: &Container) {
             }
         }
     }
+    invalidate_containers(server);
 }
 
 /// Console command. API-only servers can't do console — returns None.
