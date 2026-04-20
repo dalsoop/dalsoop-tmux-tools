@@ -16,7 +16,7 @@ pub(crate) fn render(f: &mut ratatui::Frame, app: &mut App) {
 
     // Outer border block
     let outer = Block::default()
-        .title(Span::styled(" tmux-config ", Style::default().fg(BLUE).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(" tmux-topbar ", Style::default().fg(BLUE).add_modifier(Modifier::BOLD)))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(BORDER))
