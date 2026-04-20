@@ -1,5 +1,6 @@
 mod apps;
 mod cli;
+mod command_runner;
 mod config_io;
 mod dal;
 mod form;
