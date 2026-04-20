@@ -145,7 +145,32 @@ pub fn ensure_host_key(host: &str) -> bool {
 
 // ── SSH commands ──
 
+/// 호스트 문자열이 현재 머신(로컬)을 가리키는지 판정.
+/// 루프백·localhost·현재 hostname 이면 true.
+pub fn is_localhost(host: &str) -> bool {
+    if matches!(host, "127.0.0.1" | "localhost" | "::1") {
+        return true;
+    }
+    if let Ok(out) = Command::new("hostname").output() {
+        if let Ok(s) = String::from_utf8(out.stdout) {
+            if host == s.trim() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn ssh_run(user: &str, host: &str, cmd: &str) -> Option<String> {
+    // 호스트가 자기 자신이면 SSH 우회해 로컬 실행.
+    if is_localhost(host) {
+        let _ = user; // sudo/su 전환 없이 현재 사용자로 실행 (TUI 는 대개 root)
+        let output = Command::new("sh").arg("-c").arg(cmd).output().ok()?;
+        if output.status.success() {
+            return Some(String::from_utf8_lossy(&output.stdout).to_string());
+        }
+        return None;
+    }
     let target = format!("{user}@{host}");
     let output = Command::new("ssh")
         .args(SSH_OPTS)
@@ -171,6 +196,15 @@ fn ssh_run(user: &str, host: &str, cmd: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// ssh 래퍼가 필요한 커맨드를 로컬·원격 상황에 맞게 조립.
+fn remote_or_local(user: &str, host: &str, remote_cmd: &str) -> String {
+    if is_localhost(host) {
+        remote_cmd.to_string()
+    } else {
+        format!("ssh -t {user}@{host} {remote_cmd}")
+    }
 }
 
 // ── API helpers ──
@@ -505,7 +539,7 @@ pub fn console_cmd(server: &ProxmoxServer, c: &Container) -> Option<String> {
     } else {
         format!("pct enter {}", c.vmid)
     };
-    Some(format!("ssh -t {}@{} {enter}", server.user, server.host))
+    Some(remote_or_local(&server.user, &server.host, &enter))
 }
 
 // ── Detail fetch (combined) ──
@@ -771,36 +805,32 @@ pub fn docker_restart(server: &ProxmoxServer, vmid: u32, container: &str) -> boo
 
 /// Returns a tmux command to tail docker logs.
 pub fn docker_logs_cmd(server: &ProxmoxServer, vmid: u32, container: &str) -> String {
-    format!(
-        "ssh -t {}@{} pct exec {} -- docker logs -f --tail 100 {}",
-        server.user, server.host, vmid, container
-    )
+    let inner = format!("pct exec {vmid} -- docker logs -f --tail 100 {container}");
+    remote_or_local(&server.user, &server.host, &inner)
 }
 
 /// Returns a tmux command to tail container system logs.
 pub fn container_logs_cmd(server: &ProxmoxServer, c: &Container) -> Option<String> {
     if server.access == AccessType::Api { return None; }
-    if c.kind == "vm" {
+    let inner = if c.kind == "vm" {
         // VM: serial console log
-        Some(format!(
-            "ssh -t {}@{} qm terminal {}",
-            server.user, server.host, c.vmid
-        ))
+        format!("qm terminal {}", c.vmid)
     } else {
         // LXC: journalctl or syslog
-        Some(format!(
-            "ssh -t {}@{} pct exec {} -- sh -c 'journalctl -f -n 100 2>/dev/null || tail -f /var/log/syslog 2>/dev/null || tail -f /var/log/messages'",
-            server.user, server.host, c.vmid
-        ))
-    }
+        format!(
+            "pct exec {} -- sh -c 'journalctl -f -n 100 2>/dev/null || tail -f /var/log/syslog 2>/dev/null || tail -f /var/log/messages'",
+            c.vmid
+        )
+    };
+    Some(remote_or_local(&server.user, &server.host, &inner))
 }
 
 /// Returns a tmux command to exec into docker container.
 pub fn docker_exec_cmd(server: &ProxmoxServer, vmid: u32, container: &str) -> String {
-    format!(
-        "ssh -t {}@{} pct exec {} -- docker exec -it {} sh -c 'bash 2>/dev/null || sh'",
-        server.user, server.host, vmid, container
-    )
+    let inner = format!(
+        "pct exec {vmid} -- docker exec -it {container} sh -c 'bash 2>/dev/null || sh'"
+    );
+    remote_or_local(&server.user, &server.host, &inner)
 }
 
 // ── Display ──
