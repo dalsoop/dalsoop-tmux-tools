@@ -1,6 +1,6 @@
 [package]
 name = "tmux-fmt"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "Type-safe builder for tmux status bar format strings"
 license = "MIT"

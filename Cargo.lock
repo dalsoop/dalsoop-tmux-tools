@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "tmux-config"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -631,7 +631,7 @@ dependencies = [
 
 [[package]]
 name = "tmux-fmt"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "hardcoded-lint",
@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "tmux-sessionbar"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -653,7 +653,7 @@ dependencies = [
 
 [[package]]
 name = "tmux-windowbar"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
