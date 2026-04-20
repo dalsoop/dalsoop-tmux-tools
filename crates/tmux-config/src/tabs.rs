@@ -17,7 +17,7 @@ pub enum Tab {
 
 impl Tab {
     pub fn titles() -> Vec<&'static str> {
-        vec!["SSH", "Apps", "Proxmox", "Dal", "Settings"]
+        vec!["SSH", "Apps", "Proxmox", "Settings"]
     }
 
     pub fn index(self) -> usize {
@@ -25,8 +25,10 @@ impl Tab {
             Tab::Ssh      => 0,
             Tab::Apps     => 1,
             Tab::Proxmox  => 2,
-            Tab::Dal      => 3,
-            Tab::Settings => 4,
+            Tab::Settings => 3,
+            // Dal 은 UI 에서 숨김 — 순환/선택 대상에서 제외 (enum variant 는
+            // 다른 모듈이 참조하고 있어 유지).
+            Tab::Dal      => usize::MAX,
         }
     }
 
@@ -34,8 +36,7 @@ impl Tab {
         match idx {
             1 => Tab::Apps,
             2 => Tab::Proxmox,
-            3 => Tab::Dal,
-            4 => Tab::Settings,
+            3 => Tab::Settings,
             _ => Tab::Ssh,
         }
     }

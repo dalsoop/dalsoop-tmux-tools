@@ -157,7 +157,11 @@ pub(crate) fn cli_dispatch(args: &[String]) -> Result<()> {
             let config = load_config()?;
             let servers = proxmox::get_servers(&config);
             for s in &servers {
-                let tag = match s.access { proxmox::AccessType::Ssh => "ssh", proxmox::AccessType::Api => "api" };
+                let tag = match s.access {
+                    proxmox::AccessType::Ssh if proxmox::is_localhost(&s.host) => "local",
+                    proxmox::AccessType::Ssh => "ssh",
+                    proxmox::AccessType::Api => "api",
+                };
                 println!("{:<15} {}@{:<20} [{}]", s.name, s.user, s.host, tag);
             }
             Ok(())
