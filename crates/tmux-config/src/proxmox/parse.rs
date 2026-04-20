@@ -323,4 +323,42 @@ nodelist {
         assert_eq!(extract_json_str(s, "ticket").as_deref(), Some("abc"));
         assert_eq!(extract_json_str(s, "missing"), None);
     }
+
+    // ── Fixture 회귀 테스트 ──
+    // 실제 호스트에서 캡처한 pct/qm/corosync 출력. 포맷이 바뀌면 여기서 먼저 깨짐.
+
+    const PCT_FIXTURE: &str = include_str!("tests/fixtures/pct_list.txt");
+    const QM_FIXTURE: &str = include_str!("tests/fixtures/qm_list.txt");
+    const COROSYNC_FIXTURE: &str = include_str!("tests/fixtures/corosync.conf");
+
+    #[test]
+    fn fixture_pct_list_parses() {
+        let rows = parse_pct_list(PCT_FIXTURE);
+        assert!(rows.len() >= 3, "expected >=3 rows, got {}", rows.len());
+        let first = &rows[0];
+        assert!(first.vmid > 0);
+        assert_eq!(first.kind, "lxc");
+        assert!(!first.name.is_empty());
+        assert!(first.status == "running" || first.status == "stopped");
+    }
+
+    #[test]
+    fn fixture_qm_list_parses() {
+        let rows = parse_qm_list(QM_FIXTURE);
+        assert!(!rows.is_empty(), "expected >=1 VM row");
+        for r in &rows {
+            assert!(r.status.chars().all(|c| !c.is_uppercase()), "status lower: {:?}", r.status);
+            assert_eq!(r.kind, "vm");
+        }
+    }
+
+    #[test]
+    fn fixture_corosync_extracts_cluster_members() {
+        let members = parse_cluster_members(COROSYNC_FIXTURE);
+        assert!(members.len() >= 2, "expected >=2 nodes, got {}", members.len());
+        for (name, addr) in &members {
+            assert!(!name.is_empty());
+            assert!(!addr.contains(' '), "addr must be single token: {addr}");
+        }
+    }
 }

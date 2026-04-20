@@ -8,13 +8,24 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            arch: aarch64
+            cross: true
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -23,21 +34,57 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build
-        run: cargo build --release
+      - name: Install cross (aarch64)
+        if: matrix.cross
+        run: cargo install cross --locked
+
+      - name: Build (native)
+        if: '!matrix.cross'
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
 
       - name: Package
         run: |
           mkdir -p dist
-          cp target/release/tmux-sessionbar dist/
-          cp target/release/tmux-windowbar dist/
-          cp target/release/tmux-topbar dist/
+          cp target/${{ matrix.target }}/release/tmux-sessionbar dist/
+          cp target/${{ matrix.target }}/release/tmux-windowbar dist/
+          cp target/${{ matrix.target }}/release/tmux-topbar dist/
           cp install.sh dist/
           cd dist
-          tar czf tmux-tools-x86_64-linux.tar.gz tmux-sessionbar tmux-windowbar tmux-topbar install.sh
-          sha256sum tmux-tools-x86_64-linux.tar.gz > SHA256SUMS
+          tar czf tmux-tools-${{ matrix.arch }}-linux.tar.gz tmux-sessionbar tmux-windowbar tmux-topbar install.sh
+          sha256sum tmux-tools-${{ matrix.arch }}-linux.tar.gz > SHA256SUMS-${{ matrix.arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tmux-tools-${{ matrix.arch }}
+          path: |
+            dist/tmux-tools-${{ matrix.arch }}-linux.tar.gz
+            dist/SHA256SUMS-${{ matrix.arch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Combine SHA256SUMS
+        run: |
+          cd dist
+          cat SHA256SUMS-* > SHA256SUMS
+          rm SHA256SUMS-*
+          ls -la
 
       - name: Create Release
         env:
@@ -46,4 +93,5 @@ jobs:
           gh release create ${{ github.ref_name }} \
             --generate-notes \
             dist/tmux-tools-x86_64-linux.tar.gz \
+            dist/tmux-tools-aarch64-linux.tar.gz \
             dist/SHA256SUMS

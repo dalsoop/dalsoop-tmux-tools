@@ -44,8 +44,15 @@ if [ -f "$INSTALL_DIR/tmux-sessionbar" ]; then
     CURRENT=$("$INSTALL_DIR/tmux-sessionbar" --version 2>/dev/null | head -1 || echo "unknown")
 fi
 
+# Detect architecture for release asset selection.
+case "$(uname -m)" in
+    x86_64|amd64)  ARCH="x86_64" ;;
+    aarch64|arm64) ARCH="aarch64" ;;
+    *) err "Unsupported architecture: $(uname -m)" ;;
+esac
+
 # Download
-URL="https://github.com/$REPO/releases/download/$VERSION/tmux-tools-x86_64-linux.tar.gz"
+URL="https://github.com/$REPO/releases/download/$VERSION/tmux-tools-${ARCH}-linux.tar.gz"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 

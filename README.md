@@ -5,12 +5,14 @@ A collection of tmux utilities built in Rust. One command (`tmux-sessionbar init
 ## Status Bar
 
 ```
-Users     👤 root  👤 jeonghan  👤 dalroot-dns  👤 dalroot-ops ...
-Sessions  0  1 x  2  [+]  1:claude  2:bash x  [+]   0.5 3.2/32G  pve 00:15  🌐👤📋⚡
+Users     👤 root  🖥️ pve                  ⊞  ⤢  ↻      | -      ⚙
+Sessions  0  1 x  2  [+]  1:claude  2:bash x  [+]   0.5 3.2/32G  pve 00:15
 Windows   0.0:bash  0.1:vim x  1.0:claude x ...
-Panes     2.1.0:bash  2.1.1:claude x  | -
-Apps      🔐 spf  🤖 claude  🧠 codex  📊 htop  🐍 python3  🖥️ bash
+Panes     2.1.0:bash  2.1.1:claude x
+Apps      🔐 spf  📊 htop
 ```
+
+Users 줄 오른쪽: layout / zoom / rotate (\`⊞ ⤢ ↻\`) + split-h/v (\`| -\`) + 설정 TUI(\`⚙\`) — 톱니바퀴 클릭 시 `tmux-topbar` TUI 가 단일 윈도우로 뜸.
 
 ## Features
 
@@ -33,6 +35,10 @@ Apps      🔐 spf  🤖 claude  🧠 codex  📊 htop  🐍 python3  🖥️ ba
 - **Account sync** — sync configs + TPM + plugins to all system accounts
 - **LXC compatible** — auto-creates tmux socket dir and writes stable home-local command shims
 - **Re-entrancy guard** — timestamp-based debounce prevents recursive hook invocations
+- **Proxmox 로컬 단락 (v0.2)** — 등록 호스트가 127.0.0.1/localhost/현재 hostname/LAN IP 이면 `ssh` 래퍼를 생략하고 `sh -c` 로 바로 실행. TUI 태그도 `[local]`
+- **클러스터 peer 자동 탐색 (v0.2)** — 로컬 Proxmox 노드가 `/etc/pve/corosync.conf` 에 있으면 peer 를 자동으로 서버 목록에 붙임
+- **TTL 캐시 (v0.2)** — `fetch_containers` 10s / `fetch_host_info` 5s 인메모리 캐시. `start/stop_container` 후 즉시 무효화
+- **단일 인스턴스 TUI (v0.2)** — 톱니바퀴 클릭 시 기존 `tmux-topbar` 윈도우가 있으면 그리 전환, 없으면 새로 생성
 
 ## Tools
 
@@ -41,7 +47,7 @@ Apps      🔐 spf  🤖 claude  🧠 codex  📊 htop  🐍 python3  🖥️ ba
 | [tmux-fmt](crates/tmux-fmt/) | Type-safe tmux format string builder, tmux command helpers, re-entrancy guard |
 | [tmux-sessionbar](crates/tmux-sessionbar/) | Session management, status bar, CPU/memory, plugin manager, account sync |
 | [tmux-windowbar](crates/tmux-windowbar/) | Window/pane management, user switching, app launcher, layout save/restore |
-| [tmux-config](crates/tmux-config/) | TUI configuration manager (SSH, Apps, Proxmox, Dal test runner, Settings) |
+| [tmux-topbar](crates/tmux-config/) | TUI configuration manager (SSH, Apps, Proxmox, Settings). 구 이름 `tmux-config` 는 `tmux-topbar` 심링크로 유지 |
 
 ## Requirements
 
@@ -69,7 +75,8 @@ curl -sL https://raw.githubusercontent.com/dalsoop/dalsoop-tmux-tools/main/unins
 git clone https://github.com/dalsoop/dalsoop-tmux-tools.git
 cd dalsoop-tmux-tools
 cargo build --release
-sudo cp target/release/{tmux-sessionbar,tmux-windowbar,tmux-config} /usr/local/bin/
+sudo cp target/release/{tmux-sessionbar,tmux-windowbar,tmux-topbar} /usr/local/bin/
+sudo ln -sf tmux-topbar /usr/local/bin/tmux-config  # tmux-sessionbar init 호환 심링크
 
 # One-step setup (does everything)
 tmux-sessionbar init
@@ -107,8 +114,8 @@ dalsoop-tmux-tools/
 │   ├── tmux-fmt/          # Shared library: format builder + tmux helpers
 │   ├── tmux-sessionbar/   # CLI: session management + status bar
 │   ├── tmux-windowbar/    # CLI: window/pane management
-│   └── tmux-config/       # TUI: configuration manager (ratatui)
-├── .dal/tester/           # dalcenter test runner dal
+│   └── tmux-config/       # TUI: configuration manager (ratatui) — 산출물은 `tmux-topbar`
+├── .dal/tester/           # dalcenter test runner dal (내부용, UI 숨김)
 ├── tests/                 # Integration tests (bats)
 ├── install.sh             # curl | sh installer
 └── uninstall.sh           # Uninstaller (keeps configs)
