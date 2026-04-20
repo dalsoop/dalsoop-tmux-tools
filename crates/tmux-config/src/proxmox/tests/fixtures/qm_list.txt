@@ -1,0 +1,3 @@
+      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID       
+      9000 debian13-cloud       stopped    2048               3.00 0         
+     50055 linuxmint-obs-2      running    12000             40.00 3368778   
