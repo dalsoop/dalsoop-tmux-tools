@@ -1,4 +1,5 @@
 mod apps;
+mod cache;
 mod cli;
 mod command_runner;
 mod config_io;

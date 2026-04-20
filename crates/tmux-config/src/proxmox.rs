@@ -2,10 +2,11 @@ use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
 };
-use std::collections::{HashMap, HashSet};
+use crate::cache::TtlCache;
+use std::collections::HashSet;
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::sync::OnceLock;
+use std::time::Duration;
 use tmux_windowbar::config::template::Config;
 
 const CONTAINER_CACHE_TTL: Duration = Duration::from_secs(10);
@@ -14,13 +15,16 @@ const HOST_INFO_CACHE_TTL: Duration = Duration::from_secs(5);
 // ── Cache ──
 // fetch_containers 는 TUI 목록 화면이 반복 호출하는 가장 무거운 호출
 // (pct list + qm list 두 번의 sh/ssh 실행). 10초 TTL 로 wrap.
-// start_container / stop_container 직후 invalidate_containers() 로 무효화.
+// start/stop 직후 invalidate 로 무효화.
 
-type ContainerCacheMap = HashMap<String, (Instant, Vec<Container>)>;
+fn container_cache() -> &'static TtlCache<Vec<Container>> {
+    static CACHE: OnceLock<TtlCache<Vec<Container>>> = OnceLock::new();
+    CACHE.get_or_init(|| TtlCache::new(CONTAINER_CACHE_TTL))
+}
 
-fn container_cache() -> &'static Mutex<ContainerCacheMap> {
-    static CACHE: OnceLock<Mutex<ContainerCacheMap>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+fn host_info_cache() -> &'static TtlCache<HostInfo> {
+    static CACHE: OnceLock<TtlCache<HostInfo>> = OnceLock::new();
+    CACHE.get_or_init(|| TtlCache::new(HOST_INFO_CACHE_TTL))
 }
 
 fn cache_key(server: &ProxmoxServer) -> String {
@@ -28,17 +32,7 @@ fn cache_key(server: &ProxmoxServer) -> String {
 }
 
 fn invalidate_containers(server: &ProxmoxServer) {
-    if let Ok(mut map) = container_cache().lock() {
-        map.remove(&cache_key(server));
-    }
-}
-
-// fetch_host_info 5s TTL 캐시 — host 탭의 CPU/mem/uptime 반복 렌더.
-type HostInfoCacheMap = HashMap<String, (Instant, HostInfo)>;
-
-fn host_info_cache() -> &'static Mutex<HostInfoCacheMap> {
-    static CACHE: OnceLock<Mutex<HostInfoCacheMap>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    container_cache().invalidate(&cache_key(server));
 }
 
 // is_localhost 결과를 프로세스 당 1회만 계산 (hostname / hostname -I fork 비용 제거).
@@ -401,14 +395,9 @@ fn extract_json_str(text: &str, key: &str) -> Option<String> {
 // ── Fetch (dispatch) ──
 
 pub fn fetch_containers(server: &ProxmoxServer) -> Vec<Container> {
-    // 캐시 hit (TTL 내) 이면 바로 반환
     let key = cache_key(server);
-    if let Ok(map) = container_cache().lock() {
-        if let Some((at, data)) = map.get(&key) {
-            if at.elapsed() < CONTAINER_CACHE_TTL {
-                return data.clone();
-            }
-        }
+    if let Some(hit) = container_cache().get(&key) {
+        return hit;
     }
 
     let mut result = match server.access {
@@ -423,11 +412,7 @@ pub fn fetch_containers(server: &ProxmoxServer) -> Vec<Container> {
         br.cmp(&ar).then(a.vmid.cmp(&b.vmid))
     });
 
-    // 캐시 저장
-    if let Ok(mut map) = container_cache().lock() {
-        map.insert(key, (Instant::now(), result.clone()));
-    }
-
+    container_cache().put(key, result.clone());
     result
 }
 
@@ -730,12 +715,8 @@ pub struct HostInfo {
 
 pub fn fetch_host_info(server: &ProxmoxServer) -> Option<HostInfo> {
     let key = cache_key(server);
-    if let Ok(map) = host_info_cache().lock() {
-        if let Some((at, data)) = map.get(&key) {
-            if at.elapsed() < HOST_INFO_CACHE_TTL {
-                return Some(data.clone());
-            }
-        }
+    if let Some(hit) = host_info_cache().get(&key) {
+        return Some(hit);
     }
 
     let cmd = r#"echo "hostname:$(hostname)" && echo "kernel:$(uname -r)" && echo "cpu:$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs)" && echo "cores:$(nproc)" && echo "mem:$(free -m | awk '/Mem/{print $3"/"$2"MB"}')" && echo "uptime:$(uptime -p 2>/dev/null || uptime)" && echo "load:$(cat /proc/loadavg | awk '{print $1,$2,$3}')" && echo "pve:$(pveversion 2>/dev/null || echo '-')"
@@ -767,9 +748,7 @@ pub fn fetch_host_info(server: &ProxmoxServer) -> Option<HostInfo> {
         }
     }
 
-    if let Ok(mut map) = host_info_cache().lock() {
-        map.insert(key, (Instant::now(), info.clone()));
-    }
+    host_info_cache().put(key, info.clone());
     Some(info)
 }
 
