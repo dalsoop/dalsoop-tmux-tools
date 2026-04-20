@@ -8,7 +8,6 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tmux_windowbar::config::template::Config;
 
-const SSH_OPTS: [&str; 4] = ["-o", "ConnectTimeout=5", "-o", "BatchMode=yes"];
 const CONTAINER_CACHE_TTL: Duration = Duration::from_secs(10);
 const HOST_INFO_CACHE_TTL: Duration = Duration::from_secs(5);
 
@@ -259,41 +258,10 @@ pub fn is_localhost(host: &str) -> bool {
     local_aliases().contains(host)
 }
 
+/// 하위 호환을 위한 얇은 래퍼. 새 코드에서는 [`crate::command_runner::runner_for`]
+/// 을 직접 써도 된다.
 fn ssh_run(user: &str, host: &str, cmd: &str) -> Option<String> {
-    // 호스트가 자기 자신이면 SSH 우회해 로컬 실행.
-    if is_localhost(host) {
-        let _ = user; // sudo/su 전환 없이 현재 사용자로 실행 (TUI 는 대개 root)
-        let output = Command::new("sh").arg("-c").arg(cmd).output().ok()?;
-        if output.status.success() {
-            return Some(String::from_utf8_lossy(&output.stdout).to_string());
-        }
-        return None;
-    }
-    let target = format!("{user}@{host}");
-    let output = Command::new("ssh")
-        .args(SSH_OPTS)
-        .arg(&target)
-        .arg(cmd)
-        .output()
-        .ok()?;
-    if output.status.success() {
-        return Some(String::from_utf8_lossy(&output.stdout).to_string());
-    }
-    // Detect host key verification failure and offer to fix it
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("Host key verification failed") && ensure_host_key(host) {
-        // Retry after registering the key
-        let output = Command::new("ssh")
-            .args(SSH_OPTS)
-            .arg(&target)
-            .arg(cmd)
-            .output()
-            .ok()?;
-        if output.status.success() {
-            return Some(String::from_utf8_lossy(&output.stdout).to_string());
-        }
-    }
-    None
+    crate::command_runner::runner_for(user, host).run(cmd)
 }
 
 /// ssh 래퍼가 필요한 커맨드를 로컬·원격 상황에 맞게 조립.
