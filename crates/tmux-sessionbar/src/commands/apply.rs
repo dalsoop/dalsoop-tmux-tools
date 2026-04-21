@@ -1,3 +1,4 @@
+use crate::ai_status;
 use crate::config::template;
 use crate::config::tmux_conf;
 use anyhow::{Context, Result, bail};
@@ -42,6 +43,7 @@ pub fn run() -> Result<()> {
         &binary_path,
         &shims::resolve_executable("tmux-windowbar")?,
     )?;
+    ai_status::install(&template::bin_dir())?;
 
     let conf_content = tmux_conf::generate(&config, &binary_path);
     fs::write(&tmux_conf_path, &conf_content)?;
