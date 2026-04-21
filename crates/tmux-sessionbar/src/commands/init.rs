@@ -1,3 +1,4 @@
+use crate::ai_status;
 use crate::config::template::{self, default_config};
 use crate::config::tmux_conf;
 use anyhow::{Context, Result};
@@ -48,6 +49,7 @@ pub fn run() -> Result<()> {
         &binary_path,
         &shims::resolve_executable("tmux-windowbar")?,
     )?;
+    ai_status::install(&template::bin_dir())?;
     let conf_content = tmux_conf::generate(&config, &binary_path);
     fs::write(&tmux_conf_path, &conf_content)?;
     println!("[3/8] generated: {}", tmux_conf_path.display());
@@ -156,9 +158,7 @@ fn register_local_host() {
     };
 
     // Check if already registered
-    let list_output = Command::new("tmux-config")
-        .args(["ssh-list"])
-        .output();
+    let list_output = Command::new("tmux-config").args(["ssh-list"]).output();
     if let Ok(output) = &list_output {
         let stdout = String::from_utf8_lossy(&output.stdout);
         if stdout.contains(&hostname) {
@@ -177,7 +177,10 @@ fn register_local_host() {
 
     match result {
         Ok(o) if o.status.success() => {
-            println!("[6/8] registered local host '{}' (type: {})", hostname, host_type);
+            println!(
+                "[6/8] registered local host '{}' (type: {})",
+                hostname, host_type
+            );
         }
         _ => {
             println!("[6/8] skipped local host registration (tmux-config not available)");

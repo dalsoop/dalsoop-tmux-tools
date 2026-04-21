@@ -25,6 +25,7 @@ Users 줄 오른쪽: layout / zoom / rotate (\`⊞ ⤢ ↻\`) + split-h/v (\`| -
 - **View filtering** — click a user to filter Sessions/Windows/Panes to their data only
 - **Pane status colors** — idle (gray), running (cyan), custom per-command via `config.toml`
 - **Pane split buttons** — `[|]` horizontal, `[-]` vertical split
+- **AI usage overlay** — per-pane / per-window `tok`, `msg`, `use` counters from Claude/Codex local session logs
 - **App launcher** — click to launch spf, claude, codex, htop, python3, bash in new window
 - **CPU/Memory monitor** — load average + color-coded memory usage on Sessions line
 - **Layout save/restore** — save and reload window/pane layouts
@@ -213,7 +214,8 @@ interval = 2
 blocks = ["session-list"]
 
 [status.right]
-blocks = ["hostname", "datetime"]
+blocks = ["ai-window", "hostname", "datetime"]
+length = 300
 
 [general]
 history_limit = 5000          # scrollback lines per pane (default: 5000)
@@ -221,6 +223,9 @@ history_limit = 5000          # scrollback lines per pane (default: 5000)
 [keybindings]
 session_switch = true
 pane_clear = true             # Alt+k to clear pane scrollback
+
+[pane_border]
+show_ai_status = true         # optional AI usage summary on each pane border
 
 [maintenance]
 auto_clear = true             # periodic scrollback cleanup via cron

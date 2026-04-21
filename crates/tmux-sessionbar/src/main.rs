@@ -1,3 +1,4 @@
+mod ai_status;
 mod commands;
 mod config;
 

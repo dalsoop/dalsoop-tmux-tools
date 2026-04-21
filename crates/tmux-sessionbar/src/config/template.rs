@@ -122,6 +122,8 @@ pub struct SegmentConfig {
 pub struct BlocksConfig {
     #[serde(rename = "session-list")]
     pub session_list: SessionListBlock,
+    #[serde(rename = "ai-window", default)]
+    pub ai_window: AiWindowBlock,
     #[serde(default)]
     pub hostname: SimpleBlock,
     #[serde(default)]
@@ -173,6 +175,14 @@ pub struct DatetimeBlock {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct AiWindowBlock {
+    #[serde(default = "default_block_fg")]
+    pub fg: String,
+    #[serde(default = "default_ai_window_bg")]
+    pub bg: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct KeybindingsConfig {
     #[serde(default = "default_true")]
     pub session_switch: bool,
@@ -193,6 +203,8 @@ impl Default for KeybindingsConfig {
 pub struct PaneBorderConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default)]
+    pub show_ai_status: bool,
     #[serde(default = "default_pane_border_active_fg")]
     pub active_fg: String,
     #[serde(default = "default_pane_border_active_bg")]
@@ -201,16 +213,20 @@ pub struct PaneBorderConfig {
     pub inactive_fg: String,
     #[serde(default = "default_pane_border_inactive_bg")]
     pub inactive_bg: String,
+    #[serde(default = "default_ai_window_bg")]
+    pub ai_fg: String,
 }
 
 impl Default for PaneBorderConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            show_ai_status: true,
             active_fg: default_pane_border_active_fg(),
             active_bg: default_pane_border_active_bg(),
             inactive_fg: default_pane_border_inactive_fg(),
             inactive_bg: default_pane_border_inactive_bg(),
+            ai_fg: default_ai_window_bg(),
         }
     }
 }
@@ -231,6 +247,15 @@ impl Default for DatetimeBlock {
             fg: default_block_fg(),
             bg: default_datetime_bg(),
             format: default_datetime_format(),
+        }
+    }
+}
+
+impl Default for AiWindowBlock {
+    fn default() -> Self {
+        Self {
+            fg: default_block_fg(),
+            bg: default_ai_window_bg(),
         }
     }
 }
@@ -258,6 +283,9 @@ fn default_block_fg() -> String {
 }
 fn default_hostname_bg() -> String {
     "#61afef".into()
+}
+fn default_ai_window_bg() -> String {
+    "#56b6c2".into()
 }
 fn default_hostname_format() -> String {
     " #H ".into()
@@ -387,8 +415,8 @@ pub fn default_config() -> Config {
                 length: 120,
             },
             right: SegmentConfig {
-                blocks: vec!["hostname".into(), "datetime".into()],
-                length: 80,
+                blocks: vec!["ai-window".into(), "hostname".into(), "datetime".into()],
+                length: 300,
             },
         },
         blocks: BlocksConfig {
@@ -404,6 +432,7 @@ pub fn default_config() -> Config {
                 button_bg: default_button_bg(),
                 kill_fg: default_kill_fg(),
             },
+            ai_window: AiWindowBlock::default(),
             hostname: SimpleBlock::default(),
             datetime: DatetimeBlock::default(),
         },
