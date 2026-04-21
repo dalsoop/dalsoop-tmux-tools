@@ -27,6 +27,9 @@ pub const SEEDS: &[SeedApp] = &[
     SeedApp { emoji: "📡", command: "bandwhich",  description: "Network monitor",   fg: "#282c34", bg: "#56b6c2", brew: "bandwhich",  apt: "",           npm: "", go: "" },
     SeedApp { emoji: "🌐", command: "opencode",   description: "OpenCode CLI",      fg: "#282c34", bg: "#98c379", brew: "",           apt: "",           npm: "", go: "github.com/opencode-ai/opencode@latest" },
     SeedApp { emoji: "🖥️", command: "bash",       description: "Shell",             fg: "#282c34", bg: "#5c6370", brew: "",           apt: "",           npm: "", go: "" },
+    // pxi (proxmox-init) AI 관리 TUI — Claude/Codex doctor·tune·status, MCP 조회.
+    // pxi 설치 전제 (curl install.prelik.com | bash). install_cmd 비워둠.
+    SeedApp { emoji: "⚙️", command: "pxi-ai-menu", description: "AI 관리 (Claude/Codex)", fg: "#282c34", bg: "#d19a66", brew: "",           apt: "",           npm: "", go: "" },
 ];
 
 /// Detect which package manager is available.
