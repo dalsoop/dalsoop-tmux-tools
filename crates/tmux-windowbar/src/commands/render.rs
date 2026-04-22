@@ -330,18 +330,14 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
         click("_rotate", btn_fg, btn_bg, false, "  ↻  "),
     );
 
-    // VPN status indicator
-    let vpn_badge = match get_vpn_status() {
-        Some(vpn) => styled(
-            &th.vpn_connected_fg,
-            &th.vpn_connected_bg,
-            &format!(" 🔒 {} ", vpn.ip),
-        ),
-        None => styled(
-            &th.vpn_disconnected_fg,
-            &th.vpn_disconnected_bg,
-            " 🔓 VPN ✗ ",
-        ),
+    // VPN status indicator (cached in tmux var, refreshed every 10s)
+    let vpn_badge = {
+        let vpn_ip = get_vpn_status_cached();
+        if vpn_ip.is_empty() {
+            styled(&th.vpn_disconnected_fg, &th.vpn_disconnected_bg, " 🔓 VPN ✗ ")
+        } else {
+            styled(&th.vpn_connected_fg, &th.vpn_connected_bg, &format!(" 🔒 {} ", vpn_ip))
+        }
     };
 
     let mut line = Line::new().left().push(&label("Users", &th.users_label));
@@ -491,35 +487,42 @@ fn check_ssh_reachability(entries: &[SshEntry]) -> Vec<bool> {
     }
 }
 
+/// Validate that a string is a safe IPv4 address (digits and dots only).
+fn is_valid_ipv4(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('.').collect();
+    parts.len() == 4
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.len() <= 3 && p.chars().all(|c| c.is_ascii_digit()))
+}
+
 /// Spawn a background TCP health check via `tmux run-shell -b`.
-/// Checks one representative host per /24 subnet using `nc -z -w 1`,
+/// Checks each unique host using `nc -z -w 1`,
 /// then updates `@ssh_health` with results.
 fn spawn_health_check(entries: &[SshEntry]) {
     if entries.is_empty() {
         return;
     }
 
-    // Group by /24 subnet
-    let mut subnets: std::collections::HashMap<String, Vec<&str>> =
-        std::collections::HashMap::new();
+    // Collect unique, validated IPs
+    let mut seen = std::collections::HashSet::new();
+    let mut hosts: Vec<&str> = Vec::new();
     for entry in entries {
-        let parts: Vec<&str> = entry.host.split('.').collect();
-        if parts.len() == 4 {
-            let subnet = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
-            subnets.entry(subnet).or_default().push(&entry.host);
+        if is_valid_ipv4(&entry.host) && seen.insert(&entry.host) {
+            hosts.push(&entry.host);
         }
     }
 
-    // Build shell script: check one host per subnet, apply result to all
+    if hosts.is_empty() {
+        return;
+    }
+
+    // Build shell script: check each host individually
     let mut script = String::from("r=; ");
-    for hosts in subnets.values() {
-        let rep = hosts[0];
+    for host in &hosts {
         script.push_str(&format!(
-            "if nc -z -w 1 {rep} 22 >/dev/null 2>&1; then v=1; else v=0; fi; "
+            "if nc -z -w 1 {host} 22 >/dev/null 2>&1; then r=\"${{r}}{host}=1,\"; else r=\"${{r}}{host}=0,\"; fi; "
         ));
-        for host in hosts {
-            script.push_str(&format!("r=\"${{r}}{host}=$v,\"; "));
-        }
     }
     script.push_str("tmux set -g @ssh_health \"$r\"");
 
@@ -527,6 +530,35 @@ fn spawn_health_check(entries: &[SshEntry]) {
 }
 
 // ── VPN status ──
+
+const VPN_CHECK_INTERVAL: u64 = 10;
+
+/// Cached VPN status: returns IP string if connected, empty if not.
+/// Refreshes via scutil every 10 seconds, reads tmux @vpn_ip between.
+fn get_vpn_status_cached() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let cache_ts: u64 = tmux::query_or(&["show", "-gv", "@vpn_ts"], "0")
+        .parse()
+        .unwrap_or(0);
+    let cached = tmux::query_or(&["show", "-gv", "@vpn_ip"], "");
+
+    if now.saturating_sub(cache_ts) < VPN_CHECK_INTERVAL {
+        return cached;
+    }
+
+    // Refresh
+    tmux::run_quiet(&["set", "-g", "@vpn_ts", &now.to_string()]);
+    let ip = match get_vpn_status() {
+        Some(vpn) => vpn.ip,
+        None => String::new(),
+    };
+    tmux::run_quiet(&["set", "-g", "@vpn_ip", &ip]);
+    ip
+}
 
 struct VpnInfo {
     ip: String,

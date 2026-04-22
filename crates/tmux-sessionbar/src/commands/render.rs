@@ -120,11 +120,10 @@ fn render_right() -> Result<()> {
 use crate::config::template::ThemeConfig;
 
 fn get_system_stats(th: &ThemeConfig) -> String {
-    let (cpu_load, used_gb, total_gb) = if cfg!(target_os = "macos") {
-        get_stats_macos()
-    } else {
-        get_stats_linux()
-    };
+    #[cfg(target_os = "macos")]
+    let (cpu_load, used_gb, total_gb) = get_stats_macos();
+    #[cfg(not(target_os = "macos"))]
+    let (cpu_load, used_gb, total_gb) = get_stats_linux();
 
     let total_kb = (total_gb * 1048576.0) as u64;
     let used_kb = (used_gb * 1048576.0) as u64;
@@ -150,6 +149,7 @@ fn get_system_stats(th: &ThemeConfig) -> String {
 }
 
 /// Linux: read /proc/loadavg and /proc/meminfo
+#[cfg(not(target_os = "macos"))]
 fn get_stats_linux() -> (String, f64, f64) {
     let load = std::fs::read_to_string("/proc/loadavg").unwrap_or_default();
     let cpu_load = load.split_whitespace().next().unwrap_or("0").to_string();
@@ -170,6 +170,7 @@ fn get_stats_linux() -> (String, f64, f64) {
 }
 
 /// macOS: sysctl + vm_stat
+#[cfg(target_os = "macos")]
 fn get_stats_macos() -> (String, f64, f64) {
     // CPU load: sysctl -n vm.loadavg → "{ 1.23 4.56 7.89 }"
     let cpu_load = std::process::Command::new("sysctl")
@@ -181,7 +182,6 @@ fn get_stats_macos() -> (String, f64, f64) {
             // Strip braces: "{ 1.23 4.56 7.89 }" → "1.23"
             s.trim()
                 .trim_start_matches('{')
-                .trim()
                 .split_whitespace()
                 .next()
                 .map(String::from)
@@ -213,7 +213,7 @@ fn get_stats_macos() -> (String, f64, f64) {
                         .and_then(|s| s.split(' ').next())
                         .and_then(|s| s.parse().ok())
                 })
-                .unwrap_or(16384);
+                .unwrap_or(4096); // Intel=4096, Apple Silicon=16384
 
             let parse_pages = |prefix: &str| -> u64 {
                 text.lines()
