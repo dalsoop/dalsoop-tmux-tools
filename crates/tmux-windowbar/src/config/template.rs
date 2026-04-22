@@ -119,6 +119,20 @@ pub struct ThemeConfig {
     pub ssh_connected_fg: String,
     #[serde(default = "default_ssh_connected_bg")]
     pub ssh_connected_bg: String,
+    // SSH unreachable state (no route / VPN down)
+    #[serde(default = "default_ssh_unreachable_fg")]
+    pub ssh_unreachable_fg: String,
+    #[serde(default = "default_ssh_unreachable_bg")]
+    pub ssh_unreachable_bg: String,
+    // VPN indicator
+    #[serde(default = "default_vpn_connected_fg")]
+    pub vpn_connected_fg: String,
+    #[serde(default = "default_vpn_connected_bg")]
+    pub vpn_connected_bg: String,
+    #[serde(default = "default_vpn_disconnected_fg")]
+    pub vpn_disconnected_fg: String,
+    #[serde(default = "default_vpn_disconnected_bg")]
+    pub vpn_disconnected_bg: String,
 }
 
 impl Default for ThemeConfig {
@@ -134,6 +148,12 @@ impl Default for ThemeConfig {
             user_session_bg: default_user_session_bg(),
             ssh_connected_fg: default_ssh_connected_fg(),
             ssh_connected_bg: default_ssh_connected_bg(),
+            ssh_unreachable_fg: default_ssh_unreachable_fg(),
+            ssh_unreachable_bg: default_ssh_unreachable_bg(),
+            vpn_connected_fg: default_vpn_connected_fg(),
+            vpn_connected_bg: default_vpn_connected_bg(),
+            vpn_disconnected_fg: default_vpn_disconnected_fg(),
+            vpn_disconnected_bg: default_vpn_disconnected_bg(),
         }
     }
 }
@@ -235,6 +255,24 @@ fn default_ssh_connected_fg() -> String {
 }
 fn default_ssh_connected_bg() -> String {
     "#98c379".into()
+}
+fn default_ssh_unreachable_fg() -> String {
+    "#282c34".into()
+}
+fn default_ssh_unreachable_bg() -> String {
+    "#e06c75".into()
+}
+fn default_vpn_connected_fg() -> String {
+    "#282c34".into()
+}
+fn default_vpn_connected_bg() -> String {
+    "#98c379".into()
+}
+fn default_vpn_disconnected_fg() -> String {
+    "#282c34".into()
+}
+fn default_vpn_disconnected_bg() -> String {
+    "#e06c75".into()
 }
 
 pub fn config_dir() -> PathBuf {

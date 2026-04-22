@@ -120,34 +120,14 @@ fn render_right() -> Result<()> {
 use crate::config::template::ThemeConfig;
 
 fn get_system_stats(th: &ThemeConfig) -> String {
-    let load = std::fs::read_to_string("/proc/loadavg").unwrap_or_default();
-    let cpu_load = load.split_whitespace().next().unwrap_or("0");
+    #[cfg(target_os = "macos")]
+    let (cpu_load, used_gb, total_gb) = get_stats_macos();
+    #[cfg(not(target_os = "macos"))]
+    let (cpu_load, used_gb, total_gb) = get_stats_linux();
 
-    let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
-    let mut total_kb = 0u64;
-    let mut avail_kb = 0u64;
-    for line in meminfo.lines() {
-        if line.starts_with("MemTotal:") {
-            total_kb = line
-                .split_whitespace()
-                .nth(1)
-                .unwrap_or("0")
-                .parse()
-                .unwrap_or(0);
-        } else if line.starts_with("MemAvailable:") {
-            avail_kb = line
-                .split_whitespace()
-                .nth(1)
-                .unwrap_or("0")
-                .parse()
-                .unwrap_or(0);
-        }
-    }
-    let used_gb = (total_kb - avail_kb) as f64 / 1048576.0;
-    let total_gb = total_kb as f64 / 1048576.0;
-    let mem_pct = ((total_kb - avail_kb) * 100)
-        .checked_div(total_kb)
-        .unwrap_or(0);
+    let total_kb = (total_gb * 1048576.0) as u64;
+    let used_kb = (used_gb * 1048576.0) as u64;
+    let mem_pct = (used_kb * 100).checked_div(total_kb).unwrap_or(0);
 
     let mem_color = if mem_pct > 80 {
         &th.mem_critical
@@ -166,4 +146,90 @@ fn get_system_stats(th: &ThemeConfig) -> String {
             &format!(" {used_gb:.1}/{total_gb:.0}G ")
         ),
     )
+}
+
+/// Linux: read /proc/loadavg and /proc/meminfo
+#[cfg(not(target_os = "macos"))]
+fn get_stats_linux() -> (String, f64, f64) {
+    let load = std::fs::read_to_string("/proc/loadavg").unwrap_or_default();
+    let cpu_load = load.split_whitespace().next().unwrap_or("0").to_string();
+
+    let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    let mut total_kb = 0u64;
+    let mut avail_kb = 0u64;
+    for line in meminfo.lines() {
+        if line.starts_with("MemTotal:") {
+            total_kb = line.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+        } else if line.starts_with("MemAvailable:") {
+            avail_kb = line.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+        }
+    }
+    let used_gb = (total_kb - avail_kb) as f64 / 1048576.0;
+    let total_gb = total_kb as f64 / 1048576.0;
+    (cpu_load, used_gb, total_gb)
+}
+
+/// macOS: sysctl + vm_stat
+#[cfg(target_os = "macos")]
+fn get_stats_macos() -> (String, f64, f64) {
+    // CPU load: sysctl -n vm.loadavg → "{ 1.23 4.56 7.89 }"
+    let cpu_load = std::process::Command::new("sysctl")
+        .args(["-n", "vm.loadavg"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            let s = String::from_utf8_lossy(&o.stdout).to_string();
+            // Strip braces: "{ 1.23 4.56 7.89 }" → "1.23"
+            s.trim()
+                .trim_start_matches('{')
+                .split_whitespace()
+                .next()
+                .map(String::from)
+        })
+        .unwrap_or_else(|| "0".into());
+
+    // Total memory: sysctl -n hw.memsize → bytes
+    let total_bytes: u64 = std::process::Command::new("sysctl")
+        .args(["-n", "hw.memsize"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
+        .unwrap_or(0);
+    let total_gb = total_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+
+    // Memory usage: vm_stat → page-based stats
+    let used_gb = std::process::Command::new("vm_stat")
+        .output()
+        .ok()
+        .map(|o| {
+            let text = String::from_utf8_lossy(&o.stdout).to_string();
+            // Parse page size from first line
+            let page_size: u64 = text
+                .lines()
+                .next()
+                .and_then(|l| {
+                    l.split("page size of ")
+                        .nth(1)
+                        .and_then(|s| s.split(' ').next())
+                        .and_then(|s| s.parse().ok())
+                })
+                .unwrap_or(4096); // Intel=4096, Apple Silicon=16384
+
+            let parse_pages = |prefix: &str| -> u64 {
+                text.lines()
+                    .find(|l| l.starts_with(prefix))
+                    .and_then(|l| l.split(':').nth(1))
+                    .and_then(|v| v.trim().trim_end_matches('.').parse().ok())
+                    .unwrap_or(0)
+            };
+
+            // Used = active + wired (what apps + kernel actually hold)
+            let active = parse_pages("Pages active:");
+            let wired = parse_pages("Pages wired down:");
+            let used_bytes = (active + wired) * page_size;
+            used_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
+        })
+        .unwrap_or(0.0);
+
+    (cpu_load, used_gb, total_gb)
 }
