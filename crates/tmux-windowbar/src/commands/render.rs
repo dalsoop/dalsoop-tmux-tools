@@ -1,7 +1,7 @@
-use crate::config::template::{Config, load_config};
+use crate::config::template::{Config, SshEntry, load_config};
 use anyhow::Result;
 use tmux_fmt::tmux;
-use tmux_fmt::{Line, click, label};
+use tmux_fmt::{Line, click, label, styled};
 
 /// Renders current session's window list for status-format[0]
 fn render_windows(config: &Config) -> Result<String> {
@@ -276,18 +276,38 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
     let mut ssh_parts = Vec::new();
     let active_sessions =
         tmux::lines(&["list-sessions", "-F", "#{session_name}"]).unwrap_or_default();
+    let reachability = check_ssh_reachability(&config.ssh);
     for (i, entry) in config.ssh.iter().enumerate() {
         let range_id = format!("_ssh{i}");
         let session_name = format!("ssh-{}", entry.name);
         let has_session = active_sessions.contains(&session_name);
+        let is_reachable = reachability.get(i).copied().unwrap_or(true);
 
-        let block = if has_session {
+        let block = if has_session && !is_reachable {
+            // Session exists but host unreachable — red warning
+            click(
+                &range_id,
+                &th.ssh_unreachable_fg,
+                &th.ssh_unreachable_bg,
+                true,
+                &format!(" {} {} ⚠ ", entry.emoji, entry.name),
+            )
+        } else if has_session {
             click(
                 &range_id,
                 &th.ssh_connected_fg,
                 &th.ssh_connected_bg,
                 true,
                 &format!(" {} {} ", entry.emoji, entry.name),
+            )
+        } else if !is_reachable {
+            // No session and unreachable — red dimmed
+            click(
+                &range_id,
+                &th.ssh_unreachable_fg,
+                &th.ssh_unreachable_bg,
+                false,
+                &format!(" {} {} ⚠ ", entry.emoji, entry.name),
             )
         } else {
             click(
@@ -310,12 +330,26 @@ fn render_line_users(config: &Config, idx: usize) -> Result<()> {
         click("_rotate", btn_fg, btn_bg, false, "  ↻  "),
     );
 
+    // VPN status indicator
+    let vpn_badge = match get_vpn_status() {
+        Some(vpn) => styled(
+            &th.vpn_connected_fg,
+            &th.vpn_connected_bg,
+            &format!(" 🔒 {} ", vpn.ip),
+        ),
+        None => styled(
+            &th.vpn_disconnected_fg,
+            &th.vpn_disconnected_bg,
+            " 🔓 VPN ✗ ",
+        ),
+    };
+
     let mut line = Line::new().left().push(&label("Users", &th.users_label));
     line = line.push(&parts.join(" "));
     if !ssh_parts.is_empty() {
         line = line.push("  ").push(&ssh_parts.join(" "));
     }
-    let format = line.right().push(&pane_controls).build();
+    let format = line.right().push(&vpn_badge).push(" ").push(&pane_controls).build();
     tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
     Ok(())
 }
@@ -365,4 +399,189 @@ fn render_line_apps(config: &Config, idx: usize) -> Result<()> {
         .build();
     tmux::run(&["set", "-g", &format!("status-format[{idx}]"), &format])?;
     Ok(())
+}
+
+// ── Network reachability ──
+
+/// Health check refresh interval in seconds.
+const HEALTH_CHECK_INTERVAL: u64 = 15;
+
+/// Check if a host IP has a specific (non-default) route.
+/// On macOS, parses `route -n get <ip>` output.
+fn has_route_to(ip: &str) -> bool {
+    let output = std::process::Command::new("route")
+        .args(["-n", "get", ip])
+        .stderr(std::process::Stdio::null())
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            for line in stdout.lines() {
+                let trimmed = line.trim();
+                if let Some(dest) = trimmed.strip_prefix("destination:") {
+                    return dest.trim() != "default";
+                }
+            }
+            true
+        }
+        _ => true,
+    }
+}
+
+/// Check reachability for SSH entries using cached TCP probes.
+///
+/// Results are cached in tmux `@ssh_health` variable. A background
+/// `nc -z -w 1` check runs every 15 seconds per unique /24 subnet.
+/// Between refreshes, the cached result is returned instantly.
+/// On the very first call (no cache), falls back to route-based check.
+fn check_ssh_reachability(entries: &[SshEntry]) -> Vec<bool> {
+    use std::collections::HashMap;
+
+    if entries.is_empty() {
+        return Vec::new();
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let cache_ts: u64 = tmux::query_or(&["show", "-gv", "@ssh_health_ts"], "0")
+        .parse()
+        .unwrap_or(0);
+    let cache_str = tmux::query_or(&["show", "-gv", "@ssh_health"], "");
+
+    // Parse cache: "ip1=1,ip2=0,ip3=1,"
+    let mut cached: HashMap<&str, bool> = HashMap::new();
+    for part in cache_str.split(',') {
+        if let Some((ip, val)) = part.split_once('=') {
+            cached.insert(ip, val == "1");
+        }
+    }
+
+    // Spawn background refresh if stale
+    if now.saturating_sub(cache_ts) >= HEALTH_CHECK_INTERVAL {
+        tmux::run_quiet(&["set", "-g", "@ssh_health_ts", &now.to_string()]);
+        spawn_health_check(entries);
+    }
+
+    // Use cache if available, otherwise fall back to route check
+    if !cached.is_empty() {
+        entries
+            .iter()
+            .map(|e| cached.get(e.host.as_str()).copied().unwrap_or(true))
+            .collect()
+    } else {
+        // First run: fast route-based approximation while TCP check runs
+        let mut subnet_cache: HashMap<String, bool> = HashMap::new();
+        entries
+            .iter()
+            .map(|entry| {
+                let parts: Vec<&str> = entry.host.split('.').collect();
+                if parts.len() != 4 {
+                    return true;
+                }
+                let subnet_key = format!("{}.{}.{}.0", parts[0], parts[1], parts[2]);
+                *subnet_cache
+                    .entry(subnet_key)
+                    .or_insert_with(|| has_route_to(&entry.host))
+            })
+            .collect()
+    }
+}
+
+/// Spawn a background TCP health check via `tmux run-shell -b`.
+/// Checks one representative host per /24 subnet using `nc -z -w 1`,
+/// then updates `@ssh_health` with results.
+fn spawn_health_check(entries: &[SshEntry]) {
+    if entries.is_empty() {
+        return;
+    }
+
+    // Group by /24 subnet
+    let mut subnets: std::collections::HashMap<String, Vec<&str>> =
+        std::collections::HashMap::new();
+    for entry in entries {
+        let parts: Vec<&str> = entry.host.split('.').collect();
+        if parts.len() == 4 {
+            let subnet = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
+            subnets.entry(subnet).or_default().push(&entry.host);
+        }
+    }
+
+    // Build shell script: check one host per subnet, apply result to all
+    let mut script = String::from("r=; ");
+    for hosts in subnets.values() {
+        let rep = hosts[0];
+        script.push_str(&format!(
+            "if nc -z -w 1 {rep} 22 >/dev/null 2>&1; then v=1; else v=0; fi; "
+        ));
+        for host in hosts {
+            script.push_str(&format!("r=\"${{r}}{host}=$v,\"; "));
+        }
+    }
+    script.push_str("tmux set -g @ssh_health \"$r\"");
+
+    tmux::run_quiet(&["run-shell", "-b", &script]);
+}
+
+// ── VPN status ──
+
+struct VpnInfo {
+    ip: String,
+}
+
+/// Detect active VPN connection via macOS `scutil --nc list`.
+/// Returns VPN IP if any VPN profile is Connected.
+fn get_vpn_status() -> Option<VpnInfo> {
+    let output = std::process::Command::new("scutil")
+        .args(["--nc", "list"])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Find a Connected VPN profile and extract UUID (3rd token)
+    // Format: "* (Connected)  <UUID> VPN (type) ..."
+    let connected = stdout.lines().find(|line| line.contains("(Connected)"))?;
+    let uuid = connected.split_whitespace().nth(2)?;
+
+    // Query status by UUID to get IP
+    let status_output = std::process::Command::new("scutil")
+        .args(["--nc", "status", uuid])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+
+    let status_str = String::from_utf8_lossy(&status_output.stdout);
+
+    // Parse "0 : <vpn-ip>" after "Addresses" section
+    let mut in_addresses = false;
+    for line in status_str.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("Addresses") {
+            in_addresses = true;
+            continue;
+        }
+        if in_addresses {
+            // Format: "0 : <ip-address>"
+            if let Some(ip) = trimmed.split(" : ").nth(1) {
+                return Some(VpnInfo {
+                    ip: ip.trim().to_string(),
+                });
+            }
+            in_addresses = false;
+        }
+    }
+
+    // Fallback: connected but couldn't parse IP
+    Some(VpnInfo {
+        ip: "connected".to_string(),
+    })
 }
